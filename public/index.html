@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#07090a" />
+  <title>WaPlus Panel</title>
+  <style>
+    :root { --bg:#07090a; --card:#0f1312; --line:#1d2523; --text:#e9efec; --muted:#7f8c87; --accent:#2fd88a; --accent2:#69b7ff; }
+    * { box-sizing:border-box; margin:0; }
+    body { background:radial-gradient(900px 500px at 50% -15%,#14251e 0%,var(--bg) 68%); color:var(--text); font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif; min-height:100vh; display:flex; justify-content:center; padding:32px 16px; }
+    main { width:100%; max-width:560px; display:flex; flex-direction:column; gap:16px; }
+    .banner { width:100%; border-radius:16px; border:1px solid var(--line); aspect-ratio:16/9; object-fit:cover; }
+    .card { background:linear-gradient(145deg,rgba(17,24,22,.96),rgba(11,15,14,.98)); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 14px 45px #0004; }
+    .row { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    h1 { font-size:20px; letter-spacing:.04em; }
+    .muted { color:var(--muted); font-size:13px; }
+    .pill { display:inline-flex; align-items:center; gap:8px; font-size:12px; text-transform:uppercase; letter-spacing:.12em; padding:6px 12px; border-radius:99px; border:1px solid var(--line); }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+    .online .dot { background:var(--accent); box-shadow:0 0 12px var(--accent); }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+    .stat b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
+    form { display:flex; gap:8px; margin-top:12px; }
+    input { flex:1; background:var(--bg); border:1px solid var(--line); color:var(--text); border-radius:10px; padding:12px; font:inherit; }
+    input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+    button { background:var(--accent); color:#04130b; border:0; border-radius:10px; padding:0 18px; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:wait; }
+    .code { font:600 32px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.2em; color:var(--accent); text-align:center; padding:16px 0 4px; }
+    .hidden { display:none; }
+    .catalog { display:flex; flex-direction:column; gap:12px; }
+    .catalog-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+    .catalog-tools { display:flex; gap:8px; }
+    .catalog-tools input, .catalog-tools select { min-width:0; }
+    .command-list { max-height:440px; overflow:auto; display:grid; gap:8px; }
+    .command { display:flex; justify-content:space-between; gap:12px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+    .command code { color:var(--accent2); font-weight:700; }
+    .command small { display:block; color:var(--muted); }
+    @media(max-width:520px) { body {padding:18px 12px} .catalog-tools {flex-direction:column} .catalog-tools input,.catalog-tools select {width:100%} .command {flex-direction:column;gap:2px} }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="banner" src="/banner.png" alt="WaPlus premium WhatsApp bot banner" />
+
+    <section class="card row" aria-live="polite">
+      <div>
+        <h1 id="name">WaPlus</h1>
+        <p class="muted" id="number">Not linked yet</p>
+      </div>
+      <span class="pill" id="status"><span class="dot" aria-hidden="true"></span><span id="status-text">loading</span></span>
+    </section>
+
+    <section class="grid" aria-label="Statistics">
+      <div class="card stat"><span class="muted">Uptime</span><b id="uptime">0s</b></div>
+      <div class="card stat"><span class="muted">Commands</span><b id="total">0</b></div>
+      <div class="card stat"><span class="muted">Messages seen</span><b id="messages">0</b></div>
+      <div class="card stat"><span class="muted">Memory</span><b id="memory">0 MB</b></div>
+    </section>
+
+    <section class="card catalog" aria-label="Command catalog">
+      <div class="catalog-head"><h2 style="font-size:16px">Command library</h2><span class="muted" id="command-count">Loading…</span></div>
+      <div class="catalog-tools"><input id="command-search" type="search" placeholder="Search commands or descriptions" aria-label="Search commands" /><select id="category-filter" aria-label="Filter by category"><option value="">All categories</option></select></div>
+      <div class="command-list" id="command-list" aria-live="polite"></div>
+    </section>
+    <section class="card" id="pair-card">
+      <h2 style="font-size:16px">Link your bot</h2>
+      <p class="muted">Enter the WhatsApp number with country code, then open WhatsApp → Linked devices → Link with phone number.</p>
+      <form id="pair-form">
+        <label for="phone" class="hidden">Phone number</label>
+        <input id="phone" inputmode="numeric" placeholder="2348012345678" autocomplete="tel" required />
+        <button type="submit" id="pair-btn">Get code</button>
+      </form>
+      <p class="code hidden" id="code"></p>
+      <p class="muted" id="pair-msg" role="status"></p>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const time = (ms) => { const s = Math.floor(ms / 1000); return s >= 86400 ? `${Math.floor(s/86400)}d ${Math.floor(s%86400/3600)}h` : s >= 3600 ? `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m` : `${Math.floor(s/60)}m ${s%60}s`; };
+
+    async function refresh() {
+      try {
+        const d = await (await fetch('/api/status')).json();
+        $('name').textContent = d.bot;
+        $('number').textContent = d.number ? `+${d.number}` : 'Not linked yet';
+        $('status-text').textContent = d.status;
+        $('status').classList.toggle('online', d.status === 'online');
+        $('uptime').textContent = time(d.uptime);
+        $('total').textContent = d.totalCommands;
+        $('messages').textContent = d.messages;
+        $('memory').textContent = `${Math.round(d.memory / 1048576)} MB`;
+        $('pair-card').classList.toggle('hidden', d.status === 'online');
+        if (d.pairingCode) { $('code').textContent = d.pairingCode; $('code').classList.remove('hidden'); }
+      } catch {}
+    }
+
+    $('pair-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('pair-btn').disabled = true;
+      $('pair-msg').textContent = 'Requesting code...';
+      try {
+        const res = await fetch('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ number: $('phone').value }) });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        $('code').textContent = d.code; $('code').classList.remove('hidden');
+        $('pair-msg').textContent = 'Type this code in WhatsApp. It expires in about a minute.';
+      } catch (err) { $('pair-msg').textContent = err.message; }
+      $('pair-btn').disabled = false;
+    });
+
+    async function loadCommands() {
+      try {
+        const commands = await (await fetch('/api/commands')).json();
+        const categories = [...new Set(commands.map(c => c.category))].sort();
+        $('category-filter').innerHTML = '<option value="">All categories</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+        const render = () => {
+          const q = $('command-search').value.trim().toLowerCase(), cat = $('category-filter').value;
+          const filtered = commands.filter(c => (!cat || c.category === cat) && (!q || `${c.name} ${c.desc} ${(c.alias||[]).join(' ')}`.toLowerCase().includes(q)));
+          $('command-count').textContent = `${filtered.length} / ${commands.length} commands`;
+          $('command-list').innerHTML = filtered.slice(0,150).map(c => `<article class="command"><div><code>${c.name}</code><small>${c.desc || 'No description'}</small></div><span class="muted">${c.category}</span></article>`).join('') || '<p class="muted">No matching commands.</p>';
+        };
+        $('command-search').addEventListener('input', render);
+        $('category-filter').addEventListener('change', render);
+        render();
+      } catch { $('command-count').textContent = 'Catalog unavailable'; }
+    }
+    refresh(); loadCommands();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
