@@ -3,7 +3,7 @@
 <div align="center">
 
 <a href="https://github.com/musteqeem/XADON">
-  <img src="assets/readme/xadon-hero.jpg" width="100%" alt="XADON AI dark neon banner" />
+  <img src="assets/xadon-hero.jpg" width="100%" alt="XADON AI dark neon banner" />
 </a>
 
 <br/>
@@ -135,7 +135,7 @@ Current release is **XADON AI v3**. Heads up — commands can change between upd
 
 <div align="center">
 
-<img src="assets/readme/xadon-capabilities.jpg" width="92%" alt="Neon illustration of XADON AI capabilities" />
+<img src="assets/xadon-capabilities.jpg" width="92%" alt="Neon illustration of XADON AI capabilities" />
 
 <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=17&duration=2300&pause=700&color=F472B6&center=true&vCenter=true&width=760&lines=One+WhatsApp+connection...;...a+whole+toolkit+for+your+people+%E2%9C%A8" alt="capabilities tagline" />
 
@@ -197,6 +197,205 @@ Current release is **XADON AI v3**. Heads up — commands can change between upd
 - **A WhatsApp account** + phone with **Linked devices** access
 - **Internet** — plus optional AI keys if you want the AI commands
 
+### The Autodeployer Script for pterodactly Panel
+```bash
+/**
+ * Pterodactyl bootstrapper for XADON (or any git-backed Node app).
+ *
+ * Behavior:
+ *  - On start: clone the repo (if missing) or pull latest (if exists)
+ *  - Install dependencies (npm ci if lockfile present, otherwise npm install)
+ *  - Exec the repository start command (default: `node index.js`) and forward logs/signals
+ *
+ * Configure with environment variables:
+ *  - REPO_URL      (default: https://github.com/musteqeem/xadon)
+ *  - BRANCH        (default: main)
+ *  - APP_DIR       (default: app)           Directory to clone into (relative to script)
+ *  - GIT_DEPTH     (default: 1)             Use shallow clone depth (set 0 for full)
+ *  - INSTALL_CMD   (optional)               Custom install command (overrides npm logic)
+ *  - START_CMD     (default: node index.js) Command to launch the app inside APP_DIR
+ *  - SKIP_INSTALL  (true/false)             If true, skip dependency install
+ *
+ * Usage on Pterodactyl:
+ *  - Upload this file as your server's "index.js" startup file.
+ *  - Set the server startup command to: `node index.js`
+ *  - Optional: set environment variables in the panel to customize repo/branch/start command.
+ */
+
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const REPO_URL = process.env.REPO_URL || 'https://github.com/musteqeem/xadon';
+const BRANCH = process.env.BRANCH || 'main';
+const APP_DIR = process.env.APP_DIR || 'app';
+const GIT_DEPTH = process.env.GIT_DEPTH === '0' ? 0 : Number(process.env.GIT_DEPTH || 1);
+const INSTALL_CMD = process.env.INSTALL_CMD || '';
+const START_CMD = process.env.START_CMD || 'node index.js';
+const SKIP_INSTALL = (process.env.SKIP_INSTALL || '').toLowerCase() === 'true';
+
+function log(...args) { console.log(new Date().toISOString(), ...args); }
+
+function run(cmd, args = [], opts = {}) {
+  return new Promise((resolve, reject) => {
+    log(`> ${cmd} ${args.join(' ')}`);
+    const p = spawn(cmd, args, { stdio: 'inherit', shell: false, ...opts });
+    p.on('error', (err) => reject(err));
+    p.on('exit', (code, sig) => {
+      if (sig) return reject(new Error(`Process killed by signal ${sig}`));
+      if (code === 0) resolve(code);
+      else reject(new Error(`Exit code ${code}`));
+    });
+  });
+}
+
+async function sh(command, opts = {}) {
+  // run via shell to allow complex commands
+  return new Promise((resolve, reject) => {
+    log(`$ ${command}`);
+    const p = spawn(command, { stdio: 'inherit', shell: true, ...opts });
+    p.on('error', (err) => reject(err));
+    p.on('exit', (code, sig) => {
+      if (sig) return reject(new Error(`Killed by signal ${sig}`));
+      if (code === 0) resolve(code);
+      else reject(new Error(`Exit code ${code}`));
+    });
+  });
+}
+
+async function exists(p) { try { await fs.promises.access(p); return true; } catch { return false; } }
+
+async function ensureGit() {
+  try {
+    await run('git', ['--version']);
+  } catch (err) {
+    throw new Error('git is required but not available: ' + err.message);
+  }
+}
+
+async function cloneRepo(dest) {
+  const depthArg = GIT_DEPTH && GIT_DEPTH > 0 ? ['--depth', String(GIT_DEPTH)] : [];
+  const args = ['clone', ...depthArg, '--branch', BRANCH, REPO_URL, dest].filter(Boolean);
+  await run('git', args);
+}
+
+async function updateRepo(dest) {
+  // Prefer a conservative pull/fast-forward. If pull fails, fall back to fetch+reset.
+  try {
+    await run('git', ['-C', dest, 'fetch', 'origin', BRANCH, '--depth', String(GIT_DEPTH || 1)]);
+    await run('git', ['-C', dest, 'reset', '--hard', 'FETCH_HEAD']);
+  } catch (err) {
+    log('fetch/reset failed, trying pull...', err.message);
+    await run('git', ['-C', dest, 'pull', 'origin', BRANCH]);
+  }
+}
+
+async function installDeps(dest) {
+  if (SKIP_INSTALL) {
+    log('SKIP_INSTALL=true, skipping dependency installation');
+    return;
+  }
+  if (INSTALL_CMD) {
+    log('Running custom install command:', INSTALL_CMD);
+    await sh(INSTALL_CMD, { cwd: dest });
+    return;
+  }
+  const lockfile = await exists(path.join(dest, 'package-lock.json'));
+  if (lockfile) {
+    log('Found package-lock.json, running: npm ci');
+    await run('npm', ['ci'], { cwd: dest });
+  } else {
+    log('No lockfile found, running: npm install');
+    await run('npm', ['install'], { cwd: dest });
+  }
+}
+
+function spawnApp(dest) {
+  // Use shell so START_CMD can contain complex commands; run in cwd=dest
+  log('Starting application with:', START_CMD);
+  const child = spawn(START_CMD, { shell: true, cwd: dest, stdio: 'inherit' });
+
+  // Forward signals to child
+  const forward = (sig) => {
+    log(`Forwarding ${sig} to child`);
+    try { child.kill(sig); } catch (e) { /* ignore */ }
+  };
+  process.on('SIGINT', () => forward('SIGINT'));
+  process.on('SIGTERM', () => forward('SIGTERM'));
+  process.on('SIGHUP', () => forward('SIGHUP'));
+
+  child.on('exit', (code, signal) => {
+    if (signal) {
+      log(`Child exited due to signal ${signal}`);
+      process.exit(1);
+    } else {
+      log(`Child exited with code ${code}`);
+      // Exit with the child's exit code so Pterodactyl can handle restarts.
+      process.exit(typeof code === 'number' ? code : 0);
+    }
+  });
+
+  child.on('error', (err) => {
+    log('Failed to start child process:', err);
+    process.exit(1);
+  });
+}
+
+(async () => {
+  try {
+    const base = process.cwd();
+    const dest = path.resolve(base, APP_DIR);
+
+    log('Bootstrap starting');
+    log('REPO_URL=', REPO_URL);
+    log('BRANCH=', BRANCH);
+    log('APP_DIR=', dest);
+    log('GIT_DEPTH=', GIT_DEPTH);
+    log('START_CMD=', START_CMD);
+
+    await ensureGit();
+
+    const hasDir = await exists(dest);
+    if (!hasDir) {
+      log('App directory not found — cloning repository...');
+      await cloneRepo(dest);
+    } else {
+      // quick sanity check: is it a git repo?
+      const isGit = await (async () => {
+        try {
+          await run('git', ['-C', dest, 'rev-parse', '--is-inside-work-tree']);
+          return true;
+        } catch { return false; }
+      })();
+
+      if (!isGit) {
+        log('Directory exists but is not a git repository. Renaming and re-cloning.');
+        const back = `${dest}.backup.${Date.now()}`;
+        await fs.promises.rename(dest, back);
+        await cloneRepo(dest);
+      } else {
+        log('Repository found — updating to latest on branch', BRANCH);
+        await updateRepo(dest);
+      }
+    }
+
+    // install deps
+    try {
+      await installDeps(dest);
+    } catch (err) {
+      log('Dependency installation failed:', err.message);
+      log('You can set SKIP_INSTALL=true to skip install in environments where dependencies are preinstalled.');
+      // continue to attempt to start anyway
+    }
+
+    // finally start the app inside dest
+    spawnApp(dest);
+  } catch (err) {
+    console.error('Bootstrap failed:', err && err.message ? err.message : err);
+    process.exit(1);
+  }
+})();
+```
 ### 1️⃣ Install
 
 <details open>
