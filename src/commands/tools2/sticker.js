@@ -1,4 +1,5 @@
 const sharp = require('sharp');
+const botstate = require('../../lib/botstate');
 const { Image } = require('node-webpmux');
 
 /** Adds the pack name and author that WhatsApp shows under a sticker. */
@@ -22,14 +23,14 @@ module.exports = {
     const source = m.type === 'imageMessage' ? m : m.quoted?.type === 'imageMessage' || m.quoted?.type === 'stickerMessage' ? m.quoted : null;
     if (!source) return fail('No image found', 'Send an image with the caption .sticker, or reply to one.');
 
-    const [pack, author] = (text || `${config.botName}|${m.pushName}`).split('|').map((s) => s.trim());
+    const [pack, author] = (text || `${botstate.botName()}|${m.pushName}`).split('|').map((s) => s.trim());
     const input = await source.download();
     const webp = await sharp(input)
       .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .webp({ quality: 80 })
       .toBuffer();
 
-    const sticker = await withExif(webp, pack || config.botName, author || m.pushName).catch(() => webp);
+    const sticker = await withExif(webp, pack || botstate.botName(), author || m.pushName).catch(() => webp);
     await sock.sendMessage(m.chat, { sticker }, { quoted: m.raw });
   },
 };
