@@ -13,10 +13,14 @@
 const fonts = require('./fonts');
 const config = require('../../config');
 
+const liveName = () => {
+  try { return require('./botstate').botName() || config.botName; } catch { return config.botName; }
+};
+
 const LINE = '─'.repeat(22);
 const DOTS = '┄'.repeat(24);
 
-const footer = () => `  ⌬ ${fonts.smallCaps(config.botName)} · ${fonts.smallCaps('premium')} · ᴠ${config.version}`;
+const footer = () => `  ⌬ ${fonts.smallCaps(liveName())} · ${fonts.smallCaps('premium')} · ᴠ${config.version}`;
 
 const row = (label, value) => `│ ◈ ${fonts.smallCaps(label)} ⟶ ${value}`;
 
