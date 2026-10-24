@@ -1,4 +1,5 @@
 module.exports = {
+const botstate = require('../../lib/botstate');
   name: 'support',
   alias: ['helpdesk', 'contact'],
   desc: 'Get support links',
@@ -9,7 +10,7 @@ module.exports = {
       title: 'Support',
       subtitle: 'we are here to help',
       rows: [
-        ['bot', fonts.bold(config.botName)],
+        ['bot', fonts.bold(botstate.botName())],
         ['owner', fonts.bold(config.ownerName)],
         ['website', fonts.mono(config.links.website)],
       ],
