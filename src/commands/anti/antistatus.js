@@ -1,17 +1,24 @@
-// XADON AI · ANTI — premium unicode card, no emojis.
-const { savePolicy, groupPolicy } = require('../../message-handler');
+// XADON V6 · ANTI — Block status tags
+// Modes: on = delete only · warn = delete + warn (3 warns = kick) · kick = delete + instant kick · off.
+const { savePolicy, groupPolicy, modeOf } = require('../../message-handler');
 module.exports = {
   name: 'antistatus',
   alias: ['antistatusx'],
-  desc: 'Block status tags',
-  usage: '.antistatus on | .antistatus off',
+  desc: 'Block status tags (on|warn|kick|off)',
+  usage: '.antistatus on | .antistatus warn | .antistatus kick | .antistatus off',
   group: true, admin: true, category: 'anti',
   async run({ sock, m, args, reply, ui }) {
-    const cur = !!groupPolicy(m.chat).antistatus;
+    const cur = modeOf(groupPolicy(m.chat).antistatus);
     const a = String(args[0] || '').toLowerCase();
-    const val = /^(on|enable|yes|1)$/.test(a) ? true : /^(off|disable|no|0)$/.test(a) ? false : !cur;
+    let val;
+    if (/^(on|enable|yes|1|delete)$/.test(a)) val = true;
+    else if (/^(off|disable|no|0)$/.test(a)) val = false;
+    else if (/^warn/.test(a)) val = 'warn';
+    else if (/^(kick|remove|ban)$/.test(a)) val = 'kick';
+    else val = cur === 'off' ? true : false;
     const meta = await sock.groupMetadata(m.chat).catch(() => null);
     savePolicy(m.chat, { antistatus: val, groupName: meta?.subject || 'the group' });
-    return reply(ui.notice(val ? 'success' : 'warn', 'Block status tags ' + (val ? 'enabled' : 'disabled'), 'Removes messages that mention status or channels.'));
+    const label = val === 'warn' ? 'WARN MODE (delete + warn, 3 warns = auto-kick)' : val === 'kick' ? 'KICK MODE (delete + instant kick)' : val ? 'ON (delete only)' : 'OFF';
+    return reply(ui.notice(val ? 'success' : 'warn', `Anti Status ` + label, `Block status tags\n\nModes: .antistatus on · .antistatus warn · .antistatus kick · .antistatus off`));
   },
 };
