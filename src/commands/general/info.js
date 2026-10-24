@@ -1,4 +1,5 @@
 module.exports = {
+const botstate = require('../../lib/botstate');
   name: 'info',
   alias: ['about', 'xadon'],
   desc: 'About XADON AI',
@@ -6,7 +7,7 @@ module.exports = {
     const { fonts } = ui;
     const text = ui.card({
       icon: '✦',
-      title: config.botName,
+      title: botstate.botName(),
       subtitle: 'xadon ai v2 · premium engine',
       rows: [
         ['version', fonts.mono(`v${config.version}`)],
