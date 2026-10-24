@@ -98,14 +98,102 @@ async function connect() {
     }
   });
 
+  // XADON-50 · deleted/status/call/group-icon hooks (Baileys event search: messages.update,
+  // messages.delete, status@broadcast, call events, groups.update). All guarded in try/catch.
+  const store = require('./lib/msgstore');
+  const { serialize } = require('./lib/serialize');
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     for (const msg of messages) {
       try {
+        // status updates -> status cache (for .groupstatus / .statuslist)
+        if (msg.key?.remoteJid === 'status@broadcast') {
+          try {
+            const m = serialize(sock, msg);
+            store.pushStatus({ sender: m.sender, pushName: m.pushName, type: m.type, body: (m.body || '').slice(0, 500), at: Date.now() });
+          } catch {}
+          continue;
+        }
         const consumed = await messageEvents.handleMessage(sock, msg);
         if (!consumed) await handle(sock, msg);
       } catch (e) { console.error('  handler:', e.message); }
     }
+  });
+
+  // deleted messages: Baileys emits messages.update with revoked protocol payloads
+  sock.ev.on('messages.update', async (updates) => {
+    try {
+      const list = Array.isArray(updates) ? updates : [updates];
+      for (const u of list) {
+        const upd = u?.update || u;
+        const key = u?.key || upd?.key;
+        if (!key?.remoteJid) continue;
+        const isRevoke = upd?.message === null || /revoke|delete/i.test(JSON.stringify(upd).slice(0, 2000));
+        if (!isRevoke) continue;
+        const chat = key.remoteJid;
+        const cached = store.findById(chat, key.id);
+        const policy = messageEvents.groupPolicy ? messageEvents.groupPolicy(chat) : {};
+        const entry = {
+          id: key.id,
+          sender: cached?.sender || key.participant || '',
+          pushName: cached?.pushName || '',
+          type: cached?.type || 'text',
+          body: cached?.body || '',
+          at: cached?.at || Date.now(),
+        };
+        store.pushDelete(chat, entry);
+        if (chat.endsWith('@g.us') && policy.antidelete) {
+          const who = entry.sender ? '@' + String(entry.sender).split('@')[0].split(':')[0] : 'Someone';
+          const preview = (entry.body || `[${entry.type}]`).slice(0, 300);
+          await sock.sendMessage(chat, { text: `_*亗 deleted message caught*_\n${who}: ${preview}`, mentions: entry.sender ? [entry.sender] : [] }).catch(() => {});
+        }
+      }
+    } catch (e) { console.error('  delete-hook:', e.message); }
+  });
+
+  // legacy delete event (some Baileys forks)
+  sock.ev.on('messages.delete', async (item) => {
+    try {
+      const key = item?.keys?.[0] || item?.key;
+      if (!key?.remoteJid) return;
+      const cached = store.findById(key.remoteJid, key.id);
+      if (cached) store.pushDelete(key.remoteJid, cached);
+    } catch {}
+  });
+
+  // incoming calls -> anticall (reject + delete log if enabled)
+  sock.ev.on('call', async (calls) => {
+    try {
+      const list = Array.isArray(calls) ? calls : [calls];
+      for (const call of list) {
+        if (call.status !== 'offer') continue;
+        const chat = call.chatId || call.from;
+        let policy = {};
+        try { policy = messageEvents.groupPolicy(chat) || {}; } catch {}
+        const needGlobal = require('./lib/database').get('anticall', false);
+        if (policy.anticall || needGlobal) {
+          await sock.rejectCall(call.id, call.from).catch(() => {});
+          if (chat?.endsWith('@g.us')) {
+            await sock.sendMessage(chat, { text: '_*亗 call rejected*_\nCalls are disabled in this group.' }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) { console.error('  call-hook:', e.message); }
+  });
+
+  // group icon / subject changes -> antidp guard
+  sock.ev.on('groups.update', async (updates) => {
+    try {
+      const list = Array.isArray(updates) ? updates : [updates];
+      for (const g of list) {
+        if (!g?.id) continue;
+        const policy = messageEvents.groupPolicy(g.id) || {};
+        if (policy.antidp && (g.icon || g.subject)) {
+          await sock.sendMessage(g.id, { text: '_*亗 group update blocked*_\nGroup icon/subject changes are disabled (antidp is on).' }).catch(() => {});
+        }
+      }
+    } catch {}
   });
 
   sock.ev.on('group-participants.update', (update) =>
