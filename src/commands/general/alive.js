@@ -1,4 +1,5 @@
 module.exports = {
+const botstate = require('../../lib/botstate');
   name: 'alive',
   alias: ['bot', 'status'],
   desc: 'Is the bot online',
@@ -8,7 +9,7 @@ module.exports = {
     const greet = hour < 12 ? 'good morning' : hour < 17 ? 'good afternoon' : 'good evening';
 
     const text = [
-      `✦ ${fonts.bold(`${config.botName.toUpperCase()} IS ONLINE`)} ✦`,
+      `✦ ${fonts.bold(`${botstate.botName().toUpperCase()} IS ONLINE`)} ✦`,
       '',
       `${fonts.italic(`${greet[0].toUpperCase()}${greet.slice(1)}, ${m.pushName}.`)}`,
       `${fonts.smallCaps('all systems are running smoothly')}`,
@@ -28,7 +29,7 @@ module.exports = {
       {
         image: premium.assets.banner || undefined,
         text,
-        footer: config.botName,
+        footer: botstate.botName(),
         buttons: [
           { text: 'Open Menu', id: `${prefix}menu` },
           { text: 'Visit Website', url: config.links.website },
