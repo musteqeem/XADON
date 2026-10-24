@@ -1,4 +1,5 @@
 module.exports = {
+const botstate = require('../../lib/botstate');
   name: 'owner',
   alias: ['creator', 'dev'],
   desc: 'Contact the owner',
@@ -8,7 +9,7 @@ module.exports = {
       'BEGIN:VCARD',
       'VERSION:3.0',
       `FN:${config.ownerName}`,
-      `ORG:${config.botName} Owner;`,
+      `ORG:${botstate.botName()} Owner;`,
       `item1.TEL;type=CELL;type=VOICE;waid=${number}:+${number}`,
       'item1.X-ABLabel:WhatsApp',
       'END:VCARD',
@@ -24,7 +25,7 @@ module.exports = {
         rows: [
           ['name', ui.fonts.bold(config.ownerName)],
           ['number', ui.fonts.mono(`+${number}`)],
-          ['bot', config.botName],
+          ['bot', botstate.botName()],
         ],
         body: ui.fonts.italic('Tap the contact card above to chat.'),
       }),
