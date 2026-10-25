@@ -182,19 +182,85 @@ async function connect() {
     } catch (e) { console.error('  call-hook:', e.message); }
   });
 
-  // group icon / subject changes -> antidp guard
+  // group icon / subject / description changes -> antidp / antidesc / antiname guards
   sock.ev.on('groups.update', async (updates) => {
     try {
       const list = Array.isArray(updates) ? updates : [updates];
+      const dbo = require('./lib/database');
       for (const g of list) {
         if (!g?.id) continue;
         const policy = messageEvents.groupPolicy(g.id) || {};
         if (policy.antidp && (g.icon || g.subject)) {
           await sock.sendMessage(g.id, { text: '_*亗 group update blocked*_\nGroup icon/subject changes are disabled (antidp is on).' }).catch(() => {});
         }
+        try {
+          if (policy.antidesc && typeof g.desc === 'string') {
+            const old = dbo.get(`gcdesc:${g.id}`, null);
+            if (old != null && old !== g.desc && typeof sock.groupUpdateDescription === 'function') {
+              await sock.groupUpdateDescription(g.id, old).catch(() => {});
+              await sock.sendMessage(g.id, { text: '_*亗 description restored*_\nGroup description changes are blocked (antidesc is on).' }).catch(() => {});
+            }
+          }
+          if (policy.antiname && g.subject) {
+            const oldN = dbo.get(`gcname:${g.id}`, null);
+            if (oldN && oldN !== g.subject && typeof sock.groupUpdateSubject === 'function') {
+              await sock.groupUpdateSubject(g.id, oldN).catch(() => {});
+              await sock.sendMessage(g.id, { text: '_*亗 group name restored*_\nGroup name changes are blocked (antiname is on).' }).catch(() => {});
+            }
+          }
+        } catch {}
+        // snapshot latest values (restoring the snapshot never loops: equal = no-op)
+        try {
+          if (typeof g.desc === 'string') dbo.set(`gcdesc:${g.id}`, g.desc);
+          if (g.subject) dbo.set(`gcname:${g.id}`, g.subject);
+        } catch {}
       }
     } catch {}
   });
+
+  // V7 · join-request sweeper: .autoadd / .autodecline flags + .antijoinreq policy
+  try {
+    setInterval(async () => {
+      try {
+        if (!sock?.user) return;
+        if (typeof sock.groupRequestParticipantsList !== 'function') return;
+        const dbo = require('./lib/database');
+        const data = dbo.all();
+        const jobs = [];
+        for (const [k, v] of Object.entries(data)) {
+          let mm = k.match(/^autoadd:(.+@g\.us)$/); if (mm && v) jobs.push(['approve', mm[1]]);
+          mm = k.match(/^autodecline:(.+@g\.us)$/); if (mm && v) jobs.push(['decline', mm[1]]);
+          mm = k.match(/^groupPolicy:(.+@g\.us)$/); if (mm && v && v.antijoinreq && v.antijoinreq !== 'off' && v.antijoinreq !== false) jobs.push(['decline', mm[1]]);
+        }
+        for (const [mode, jid] of jobs.slice(0, 20)) {
+          try {
+            const pending = await sock.groupRequestParticipantsList(jid).catch(() => []);
+            if (!pending?.length) continue;
+            const delay = Number(dbo.get('autoaddDelay', 0)) || 0;
+            const cc = String(dbo.get('autoaddCC', '') || '').replace(/\D/g, '');
+            for (const r of pending.slice(0, 10)) {
+              const rjid = r.jid || r.id; if (!rjid) continue;
+              const num = String(rjid).split('@')[0].split(':')[0];
+              if (mode === 'approve') {
+                if (cc && !num.startsWith(cc)) continue;
+                if (delay > 0) {
+                  const wk = `reqwait:${jid}:${num}`;
+                  const first = dbo.get(wk, 0);
+                  if (!first) { dbo.set(wk, Date.now()); continue; }
+                  if (Date.now() - first < delay * 1000) continue;
+                  dbo.delete(wk);
+                }
+                await sock.groupRequestParticipantsUpdate(jid, [rjid], 'approve').catch(() => {});
+              } else {
+                await sock.groupRequestParticipantsUpdate(jid, [rjid], 'reject').catch(() => {});
+              }
+              await new Promise((rr) => setTimeout(rr, 800));
+            }
+          } catch {}
+        }
+      } catch {}
+    }, 45000).unref?.();
+  } catch {}
 
   sock.ev.on('group-participants.update', (update) =>
     messageEvents.handleParticipantsUpdate(sock, update).catch((e) => console.error('  group event:', e.message)),
