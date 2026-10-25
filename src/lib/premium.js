@@ -107,6 +107,11 @@ const withTimeout = (p, ms) => Promise.race([
 async function transformText(str) {
   let out = fonts.normalize(String(str ?? ''));
   if (!out) return out;
+  // V7 · live branding: a renamed bot never shows stale "XADON" in any reply
+  try {
+    const bn = liveName();
+    if (bn && !/^xadon ai$/i.test(bn)) out = out.replace(/\bXADON(?:\s*AI)?\b/g, bn).replace(/\bXadon AI\b/g, bn);
+  } catch {}
   const lang = liveLang();
   if (lang && lang !== 'en') {
     // hide links / mentions / .commands behind placeholders so translators keep them intact
