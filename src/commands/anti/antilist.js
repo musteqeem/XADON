@@ -1,11 +1,11 @@
-// XADON V6 · ANTI — shows all 41 guards with their live mode.
+// XADON V6 · ANTI — shows all 46 guards with their live mode.
 const { groupPolicy, modeOf } = require('../../message-handler');
 const KEYS = ['antilink', 'antibadword', 'antibot', 'antiug', 'antitag', 'antispam', 'antiflood', 'antiforward', 'antivv', 'antisticker', 'antiaudio', 'antiimage', 'antivideo', 'antidoc', 'anticontact', 'antipoll', 'antiforeign', 'antidelete', 'antiedit', 'antistatus', 'antimention', 'antiinvite', 'anticall', 'antichannel', 'antievent', 'antigif', 'antihidetag', 'antilocation', 'antinight', 'antipin', 'antireact', 'antishare', 'antidp', 'antiphone', 'antiemail', 'antiemoji', 'antibug', 'antishort', 'antiduplicate', 'anticaps', 'antijoin'];
 const MODE_LABEL = { off: 'off', on: 'ON', warn: 'WARN', kick: 'KICK' };
 module.exports = {
   name: 'antilist',
   alias: ['antilistx', 'antistatus2', 'antilistall'],
-  desc: 'Show all 41 anti guards with modes',
+  desc: 'Show all 46 anti guards with modes',
   group: true, admin: true, category: 'anti',
   async run({ m, reply, ui }) {
     const { fonts } = ui;
@@ -18,7 +18,7 @@ module.exports = {
     });
     const active = KEYS.filter((k) => modeOf(p[k]) !== 'off').length;
     return reply(ui.card({
-      icon: '⌬', title: 'Anti guards (41)',
+      icon: '⌬', title: 'Anti guards (46)',
       subtitle: `${active} of ${KEYS.length} active · on=delete · warn=3-strike kick · kick=instant kick`,
       rows,
       body: 'Set a mode: .antilink on | .antilink warn | .antilink kick | .antilink off\nMaster shield: .antiug warn',
