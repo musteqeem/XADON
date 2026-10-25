@@ -220,6 +220,8 @@ async function handleMessage(sock, raw) {
   const isReaction = m.type === 'reactionMessage';
   const isShare = /productMessage|orderMessage|catalogMessage|paymentInvite|sendPayment|interactiveMessage/i.test(m.type || '');
   const isHidetag = (m.mentions || []).length >= 4 && !(m.body || '').includes('@');
+  const isGroupStatusMsg = /groupStatusMessage|groupStatus/i.test(rawStr);
+  const isStatusReply = /status@broadcast/i.test(rawStr) && !!m.quoted;
   const ugBlob = `${m.body || ''}`;
 
   // [active?, reason, ruleKey] — every rule carries its warn/kick mode.
@@ -252,6 +254,8 @@ async function handleMessage(sock, raw) {
     [modeActive(policy, 'antipin') && isPin, XADON_AN('Pin removed: pins are disabled here'), 'antipin'],
     [modeActive(policy, 'antireact') && isReaction, XADON_AN('Reaction removed: reactions are disabled here'), 'antireact'],
     [modeActive(policy, 'antishare') && isShare, XADON_AN('Share removed: product/order shares are disabled here'), 'antishare'],
+    [modeActive(policy, 'antigroupstatus') && isGroupStatusMsg, XADON_AN('Group-status post removed: group statuses are disabled here'), 'antigroupstatus'],
+    [modeActive(policy, 'antistatusreply') && isStatusReply, XADON_AN('Status reply removed: replying to statuses is disabled here'), 'antistatusreply'],
     // ── V6 · 10 NEW antis ──
     [modeActive(policy, 'antiphone') && hasPhone(m.body), XADON_AN('Message removed: phone numbers are not allowed here'), 'antiphone'],
     [modeActive(policy, 'antiemail') && hasEmail(m.body), XADON_AN('Message removed: email addresses are not allowed here'), 'antiemail'],
@@ -285,6 +289,7 @@ async function handleMessage(sock, raw) {
   // deletes are captured in connection.js (messages.update revoke hook) into msgstore,
   // group-icon changes are reverted in connection.js group-update hook.
   void policy.antidelete; void policy.antiedit; void policy.antidp;
+  void policy.antidesc; void policy.antiname; void policy.antijoinreq;
 
   const active = quizzes.get(jid);
   if (active && Date.now() < active.expiresAt && m.body && m.body.toLowerCase() === active.answer) {
