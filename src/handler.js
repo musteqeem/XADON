@@ -15,6 +15,8 @@ const premium = require('./lib/premium');
 const { serialize } = require('./lib/serialize');
 const loader = require('./loader');
 const store = require('./lib/msgstore');
+const rawstore = require('./lib/rawstore');
+const fmt = require('./lib/format');
 
 const stats = { messages: 0, commands: 0, startedAt: Date.now() };
 const cooldowns = new Map();
@@ -49,9 +51,18 @@ function stickerHash(m) {
 async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   const botNumber = digits(sock.user?.id);
   const isOwner = m.fromMe || m.number === botNumber || config.ownerNumbers.includes(m.number);
-  const reply = (text, extra = {}) =>
-    sock.sendMessage(m.chat, { text, ...extra }, { quoted: premium.settings().verified ? 'verified' : raw });
-  const fail = (title, text) => reply(ui.notice('error', title, text));
+  // V7 · format-aware reply: custom per-command text + active reply format (default/mono/media/rich)
+  const reply = (text, extra = {}) => {
+    try {
+      const custom = fmt.getCustom(cmd.name);
+      if (custom && typeof text === 'string' && text) {
+        const filled = fmt.fillVars(custom, { m, prefix }).replace(/\{text\}/gi, text);
+        return fmt.sendFormatted(sock, m.chat, filled, { quoted: premium.settings().verified ? 'verified' : raw, ...extra });
+      }
+    } catch {}
+    return fmt.sendFormatted(sock, m.chat, text, { quoted: premium.settings().verified ? 'verified' : raw, ...extra });
+  };
+  const fail = (title, text) => fmt.sendFormatted(sock, m.chat, ui.notice('error', title, text), { quoted: premium.settings().verified ? 'verified' : raw });
 
   if (!isOwner && (db.get('banned', []) || []).includes(m.sender)) return;
   if (db.get('mode', config.mode) === 'private' && !isOwner) return;
@@ -127,7 +138,8 @@ async function handle(sock, raw) {
   const m = serialize(sock, raw);
   if (config.autoRead) sock.readMessages([raw.key]).catch(() => {});
 
-  // record into msgstore (for .deleted / .quoted)
+  // record into msgstore (for .deleted / .quoted) + rawstore (for .quotedeep)
+  try { rawstore.push(m.chat, raw); } catch {}
   try {
     store.push(m.chat, {
       id: m.id, sender: m.sender, pushName: m.pushName, type: m.type,
