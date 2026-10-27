@@ -10,6 +10,7 @@
  */
 const config = require('../config');
 const db = require('./lib/database');
+const privs = require('./lib/privs');
 const ui = require('./lib/ui');
 const premium = require('./lib/premium');
 const { serialize } = require('./lib/serialize');
@@ -50,7 +51,11 @@ function stickerHash(m) {
 
 async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   const botNumber = digits(sock.user?.id);
-  const isOwner = m.fromMe || m.number === botNumber || config.ownerNumbers.includes(m.number);
+  // V8 · privilege layer: hard-owner (config/fromMe/self) · mod (full owner) · sudo (near owner)
+  const isHardOwner = m.fromMe || m.number === botNumber || privs.isHardOwnerNumber(db, config, m.number);
+  const isMod = privs.isModNumber(db, m.number);
+  const isSudo = isHardOwner || isMod || privs.isSudoNumber(db, m.number);
+  const isOwner = isHardOwner || isMod; // mods = FULL owner access; sudo = near-owner (no owner cmds)
   // V7 · format-aware reply: custom per-command text + active reply format (default/mono/media/rich)
   const reply = (text, extra = {}) => {
     try {
@@ -65,13 +70,30 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   const fail = (title, text) => fmt.sendFormatted(sock, m.chat, ui.notice('error', title, text), { quoted: premium.settings().verified ? 'verified' : raw });
 
   if (!isOwner && (db.get('banned', []) || []).includes(m.sender)) return;
-  if (db.get('mode', config.mode) === 'private' && !isOwner) return;
-  if (cmd.owner && !isOwner) return fail('Owner only', 'This command is reserved for the bot owner.');
+  // V8 · maintenance: whole bot frozen except hard-owners/mods
+  try {
+    if (db.get('maintenance', false) && !isOwner) return;
+  } catch {}
+  // V8 · private mode: sudo/mod/owner always pass; group admins pass too when that group's alladmin is ON
+  if (db.get('mode', config.mode) === 'private' && !isSudo) {
+    let adminBypass = false;
+    try {
+      if (m.isGroup) {
+        const { groupPolicy } = require('./message-handler');
+        if (groupPolicy(m.chat)?.alladmin) {
+          const meta = await groupMeta(sock, m.chat).catch(() => null);
+          adminBypass = !!findParticipant(meta, [m.sender, m.senderAlt])?.admin;
+        }
+      }
+    } catch {}
+    if (!adminBypass) return;
+  }
+  if (cmd.owner && !isOwner) return fail('Owner only', 'This command is reserved for the bot owner (mods included, sudos excluded). Ask an owner to .setmod you.');
   if (cmd.group && !m.isGroup) return fail('Group only', 'Use this command inside a group.');
 
-  // per-group disabled commands (owner bypasses)
+  // per-group disabled commands (sudo+ bypasses)
   try {
-    if (m.isGroup && !isOwner) {
+    if (m.isGroup && !isSudo) {
       const off = db.get(`disabled:${m.chat}`, []);
       if (Array.isArray(off) && off.includes(cmd.name)) return;
     }
@@ -89,7 +111,7 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   if (cmd.botAdmin && !isBotAdmin) return fail('Make me admin', 'I need admin rights to do that.');
 
   const last = cooldowns.get(m.sender) || 0;
-  if (!isOwner && Date.now() - last < config.cooldownMs) return;
+  if (!isSudo && Date.now() - last < config.cooldownMs) return;
   cooldowns.set(m.sender, Date.now());
 
   const target = () => {
@@ -102,7 +124,8 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   stats.commands++;
   const ctx = {
     sock, m, args, text: args.join(' '), command: cmd.name, used: String(name).toLowerCase(), prefix,
-    isOwner, isAdmin, isBotAdmin, group, target,
+    isOwner, isHardOwner, isMod, isSudo, role: isHardOwner ? 'owner' : isMod ? 'mod' : privs.isSudoNumber(db, m.number) ? 'sudo' : (isAdmin ? 'admin' : 'user'),
+    isAdmin, isBotAdmin, group, target,
     reply, fail, db, ui, config, premium, stats, loader,
   };
 
