@@ -1,5 +1,5 @@
-module.exports = {
 const botstate = require('../../lib/botstate');
+module.exports = {
   name: 'support',
   alias: ['helpdesk', 'contact'],
   desc: 'Get support links',
