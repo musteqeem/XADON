@@ -1,5 +1,5 @@
-module.exports = {
 const botstate = require('../../lib/botstate');
+module.exports = {
   name: 'alive',
   alias: ['bot', 'status'],
   desc: 'Is the bot online',
