@@ -1,5 +1,5 @@
-module.exports = {
 const botstate = require('../../lib/botstate');
+module.exports = {
   name: 'owner',
   alias: ['creator', 'dev'],
   desc: 'Contact the owner',
