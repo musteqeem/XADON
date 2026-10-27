@@ -91,10 +91,29 @@ function rawContext(raw) {
     const inner = msg[key] || {};
     const ctx = inner.contextInfo || {};
     const viewOnce = !!(inner.viewOnce || inner.viewOnceMessage || ctx.isViewOnce);
-    const forwarded = !!(ctx.isForwarded || (ctx.forwardingScore || 0) > 0);
-    return { key, ctx, viewOnce, forwarded };
-  } catch { return { key: '', ctx: {}, viewOnce: false, forwarded: false }; }
+    const forwardingScore = Number(ctx.forwardingScore || 0);
+    const forwarded = !!(ctx.isForwarded || forwardingScore > 0);
+    return { key, ctx, viewOnce, forwarded, forwardingScore };
+  } catch { return { key: '', ctx: {}, viewOnce: false, forwarded: false, forwardingScore: 0 }; }
 }
+
+// ── V8 · 10 NEW anti detectors ──
+const isCodeBlock = (text = '') => /```/.test(String(text)) || /~~~/.test(String(text));
+const hasFancyFont = (text = '') => {
+  const t = String(text);
+  const fancy = (t.match(/[\u{1D400}-\u{1D7FF}\uFF01-\uFF5E]/gu) || []).length;
+  const letters = (t.match(/[A-Za-z]/g) || []).length;
+  return fancy >= 6 && letters >= 6 && fancy / Math.max(letters, 1) >= 0.35;
+};
+const isCloudLink = (text = '') => /(mediafire\.com|drive\.google\.com|dropbox\.com|mega\.nz|onedrive\.live\.com|1drv\.ms|anonfiles|gofile\.io|terabox|zippyshare|sendspace\.com)[^\s]*/i.test(String(text));
+const isApkLink = (text = '') => /\.apk(\?|\s|$)/i.test(String(text)) || /(apkmirror|apkpure|apkcombo|modapk|happymod)[^\s]*/i.test(String(text));
+const NSFW_WORDS = ['pornhub', 'xvideos', 'xhamster', 'onlyfans', 'camgirl', 'escort service', 'nude pic', 'nude video', 'sex chat', 'adult video', 'xxx video', 'erotic story', 'bdsm', 'orgy', 'masturbat'];
+const hasNsfw = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return NSFW_WORDS.some((w) => low.includes(w)); };
+const SCAM_PATTERNS = [/free\s+(money|cash|gift|iphone|airtime|data)/i, /win\s+(cash|prize|lottery|\$)/i, /click\s+to\s+earn/i, /double\s+your\s+(money|crypto)/i, /send\s+\$?\d+.*(get|receive)\s+\$?\d+/i, /investment\s+bonus/i, /claim\s+(your|free).*(reward|bonus|prize)/i, /forex\s+(doubler|bot|guaranteed)/i];
+const isScam = (text = '') => SCAM_PATTERNS.some((re) => re.test(String(text)));
+const isWallOfText = (text = '') => { const t = String(text); return t.split(/\r?\n/).length >= 16 || (t.length >= 1500 && (t.match(/\n/g) || []).length >= 8); };
+const BET_PATTERNS = [/\b(odd|odds|stake|parlay|accumulator)\b/i, /bet9ja|sportybet|1xbet|betway|nairabet/i, /sure\s+odds/i, /fixed\s+match/i, /correct\s+score\s+tip/i];
+const isBetting = (text = '') => BET_PATTERNS.some((re) => re.test(String(text)));
 
 async function participantAdmin(sock, jid, sender) {
   try {
@@ -134,7 +153,7 @@ async function enforce(sock, raw, jid, sender, number, reason, rule) {
   const mode = modeOf(policy[rule]);
   if (mode === 'off') return false;
   const authorAdmin = await participantAdmin(sock, jid, sender);
-  const owner = config.ownerNumbers.includes(number);
+  const owner = config.ownerNumbers.includes(number) || isPrivilegedSender(number);
   if (authorAdmin || owner) return false;
   const botAdmin = await participantAdmin(sock, jid, sock.user?.id || '');
   if (!botAdmin) return false;
@@ -172,10 +191,18 @@ async function enforce(sock, raw, jid, sender, number, reason, rule) {
   return true;
 }
 
+// V8 · privileged senders (hard-owner / mod / sudo) are never anti-punished
+function isPrivilegedSender(number) {
+  try {
+    const privs = require('./lib/privs');
+    return privs.isSudoPriv(db, config, number);
+  } catch { return false; }
+}
+
 // legacy simple delete-only path (kept for compatibility)
 async function guarded(sock, raw, jid, sender, number, reason) {
   const authorAdmin = await participantAdmin(sock, jid, sender);
-  const owner = config.ownerNumbers.includes(number);
+  const owner = config.ownerNumbers.includes(number) || isPrivilegedSender(number);
   if (authorAdmin || owner) return false;
   const botAdmin = await participantAdmin(sock, jid, sock.user?.id || '');
   if (!botAdmin) return false;
@@ -200,7 +227,21 @@ async function handleMessage(sock, raw) {
   if (!m.isGroup) return false;
   const jid = m.chat;
   const policy = groupPolicy(jid);
-  const { viewOnce, forwarded } = rawContext(raw);
+  const { viewOnce, forwarded, forwardingScore } = rawContext(raw);
+  // V8 · admin-tag detection needs the admin list (lazy, only when antiadmin is armed)
+  let adminJids = null;
+  const tagsAdmin = async () => {
+    try {
+      if (!modeActive(policy, 'antiadmin')) return false;
+      if (!(m.mentions || []).length) return false;
+      if (!adminJids) {
+        const meta = await sock.groupMetadata(jid).catch(() => null);
+        adminJids = (meta?.participants || []).filter((p) => p.admin).map((p) => digit(p.id));
+      }
+      return (m.mentions || []).some((x) => adminJids.includes(digit(x)));
+    } catch { return false; }
+  };
+  const hitAntiAdmin = modeActive(policy, 'antiadmin') && (m.mentions || []).length > 0 && await tagsAdmin();
 
   // AFK auto-notice: anyone tagging an AFK user gets their reason.
   try {
@@ -265,6 +306,17 @@ async function handleMessage(sock, raw) {
     [modeActive(policy, 'antiduplicate') && dupSpam(jid, m.sender, m.body), XADON_AN('Message removed: sending the same message repeatedly is not allowed'), 'antiduplicate'],
     [modeActive(policy, 'anticaps') && capsShout(m.body), XADON_AN('Message removed: excessive CAPS shouting is not allowed'), 'anticaps'],
     [modeActive(policy, 'antijoin') && isNewcomer(jid, m.sender) && (isLink(m.body) || m.isMedia), XADON_AN('Message removed: new members cannot send links/media yet'), 'antijoin'],
+    // ── V8 · 10 NEWER antis ──
+    [modeActive(policy, 'anticode') && isCodeBlock(m.body), XADON_AN('Code removed: code blocks are not allowed here'), 'anticode'],
+    [modeActive(policy, 'antifont') && hasFancyFont(m.body), XADON_AN('Message removed: fancy/styled fonts are not allowed here'), 'antifont'],
+    [hitAntiAdmin, XADON_AN('Message removed: tagging admins is not allowed here'), 'antiadmin'],
+    [modeActive(policy, 'antibroadcast') && (forwardingScore >= 5 || /forwarded.*many|broadcast/i.test(rawStr)), XADON_AN('Broadcast removed: highly-forwarded messages are not allowed'), 'antibroadcast'],
+    [modeActive(policy, 'anticloud') && isCloudLink(m.body), XADON_AN('Link removed: cloud-drive links are not allowed here'), 'anticloud'],
+    [modeActive(policy, 'antiapk') && isApkLink(m.body), XADON_AN('File removed: APK files/links are not allowed here'), 'antiapk'],
+    [modeActive(policy, 'antinsfw') && hasNsfw(m.body), XADON_AN('Message removed: adult/NSFW content is not allowed here'), 'antinsfw'],
+    [modeActive(policy, 'antisurvey') && isScam(m.body), XADON_AN('Message removed: giveaway/scam messages are not allowed here'), 'antisurvey'],
+    [modeActive(policy, 'antiwall') && isWallOfText(m.body), XADON_AN('Message removed: walls of text are not allowed here'), 'antiwall'],
+    [modeActive(policy, 'antibet') && isBetting(m.body), XADON_AN('Message removed: betting/gambling tips are not allowed here'), 'antibet'],
   ];
   for (const [hit, reason, rule] of rules) {
     if (hit && await enforce(sock, raw, jid, m.sender, m.number, reason, rule)) return true;
@@ -276,6 +328,8 @@ async function handleMessage(sock, raw) {
       isLink(ugBlob) || isInvite(ugBlob) || hasBadWord(ugBlob) || isForeign(ugBlob) ||
       hasPhone(ugBlob) || hasEmail(ugBlob) || isShortLink(ugBlob) || hasBug(ugBlob) ||
       capsShout(ugBlob) || emojiCount(ugBlob) >= 8 || forwarded ||
+      isCodeBlock(ugBlob) || hasFancyFont(ugBlob) || isCloudLink(ugBlob) || isApkLink(ugBlob) ||
+      hasNsfw(ugBlob) || isScam(ugBlob) || isWallOfText(ugBlob) || isBetting(ugBlob) ||
       looksBot(raw, m.pushName) || (m.mentions || []).length >= 4;
     if (ugHit && await enforce(sock, raw, jid, m.sender, m.number, XADON_AN('Ultimate guard: unwanted content is blocked while ANTIUG is on'), 'antiug')) return true;
   }
