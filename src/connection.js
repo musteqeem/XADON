@@ -171,8 +171,10 @@ async function connect() {
         const chat = call.chatId || call.from;
         let policy = {};
         try { policy = messageEvents.groupPolicy(chat) || {}; } catch {}
-        const needGlobal = require('./lib/database').get('anticall', false);
-        if (policy.anticall || needGlobal) {
+        const dbo = require('./lib/database');
+        const needGlobal = dbo.get('anticall', false);
+        const callBlock = dbo.get('callblock', false); // V9 · .callblock owner toggle
+        if (policy.anticall || needGlobal || callBlock) {
           await sock.rejectCall(call.id, call.from).catch(() => {});
           if (chat?.endsWith('@g.us')) {
             await sock.sendMessage(chat, { text: '_*亗 call rejected*_\nCalls are disabled in this group.' }).catch(() => {});
