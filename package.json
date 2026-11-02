@@ -1,7 +1,7 @@
 {
   "name": "xadon-ai-v2",
   "version": "3.0.0",
-  "description": "XADON AI v3 — premium WhatsApp bot on WaPlus x @musteqeem/baileys. 250 commands.",
+  "description": "XADON AI v3 — premium WhatsApp bot on WaPlus x @musteqeem/baileys. 499 commands.",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
