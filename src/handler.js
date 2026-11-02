@@ -130,9 +130,10 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   };
 
   try {
-    // auto presence flair
+    // auto presence flair (freezeseen keeps DMs offline-looking)
     try {
-      if (db.get('autotyping', false)) await sock.sendPresenceUpdate('composing', m.chat).catch(() => {});
+      if (db.get('freezeseen', false) && !m.isGroup) await sock.sendPresenceUpdate('unavailable').catch(() => {});
+      else if (db.get('autotyping', false)) await sock.sendPresenceUpdate('composing', m.chat).catch(() => {});
       else if (db.get('autorecording', false)) await sock.sendPresenceUpdate('recording', m.chat).catch(() => {});
       else await sock.sendPresenceUpdate('composing', m.chat).catch(() => {});
     } catch {}
@@ -150,7 +151,8 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
     console.error(`[${cmd.name}]`, err);
     await fail('Something broke', `${ui.fonts.mono(err.message || String(err)).slice(0, 300)}`).catch(() => {});
   } finally {
-    sock.sendPresenceUpdate('paused', m.chat).catch(() => {});
+    if (db.get('freezeseen', false) && !m.isGroup) sock.sendPresenceUpdate('unavailable').catch(() => {});
+    else sock.sendPresenceUpdate('paused', m.chat).catch(() => {});
   }
 }
 
@@ -170,6 +172,65 @@ async function handle(sock, raw) {
       isMedia: !!m.isMedia,
       quotedId: m.quoted?.id || null, quotedBody: (m.quoted?.body || '').slice(0, 500),
     });
+  } catch {}
+
+  // ── XADON V9 · auto-responder hooks (no prefix needed) ──
+  try {
+    const vdb = db;
+    const botNum = digits(sock.user?.id);
+    const isPriv = m.fromMe || m.number === botNum || privs.isSudoPriv(vdb, config, m.number);
+    const px = vdb.get('prefix', config.prefix);
+    const isCmd = (m.body || '').startsWith(px);
+    const botJids = [sock.user?.id, sock.user?.lid].filter(Boolean).map(digits);
+    const tagsBot = (m.mentions || []).some((j) => botJids.includes(digits(j)));
+    const repliedBot = m.quoted?.sender && botJids.includes(digits(m.quoted.sender));
+
+    if (!m.isGroup && vdb.get('freezeseen', false)) {
+      try { await sock.sendPresenceUpdate('unavailable'); } catch {}
+    }
+
+    if (!m.fromMe && !isCmd && m.type !== 'reactionMessage') {
+      // 1 · owner-tag responder (.mention) + busy fallback (.busymode)
+      try {
+        const mention = require('./commands/xadon9/mention');
+        if (!isPriv && mention.ownerTagged(m)) {
+          const r = await mention.doRespond(sock, raw, m, vdb);
+          const busy = vdb.get('busy', {});
+          if (busy.on && busy.reason && !(r && r.replied)) {
+            await sock.sendMessage(m.chat, { text: `${busy.reason}`, mentions: [m.sender] }, { quoted: raw }).catch(() => {});
+            return;
+          }
+          if (r && (r.reacted || r.replied)) return;
+        }
+      } catch {}
+
+      // 2 · DM auto-reply (.autoreply) — owner/sudo exempt
+      try {
+        if (!m.isGroup && !isPriv) {
+          const ar = vdb.get('autoreply', {});
+          if (ar.on && ar.text) {
+            await sock.sendMessage(m.chat, { text: ar.text }, { quoted: raw }).catch(() => {});
+            return;
+          }
+        }
+      } catch {}
+
+      // 3 · smart AI (.smartai) — tags, replies to bot, or any private chat
+      try {
+        if (!isPriv && m.body && vdb.get('smartai', {}).on) {
+          const dm = !m.isGroup;
+          if (dm || tagsBot || repliedBot) {
+            const { ask } = require('./lib/ai');
+            try { await sock.sendPresenceUpdate('composing', m.chat).catch(() => {}); } catch {}
+            const prompt = m.isGroup ? `${m.pushName || 'Someone'} says: ${m.body.slice(0, 1200)}` : m.body.slice(0, 2000);
+            const { answer, provider } = await ask(m.isGroup ? `${m.chat}:${m.number}` : m.chat, prompt);
+            await sock.sendMessage(m.chat, { text: `${answer}\n\n⌬ ${provider}` }, { quoted: raw }).catch(() => {});
+            try { await sock.sendPresenceUpdate('paused', m.chat).catch(() => {}); } catch {}
+            return;
+          }
+        }
+      } catch {}
+    }
   } catch {}
 
   // autosticker: any image -> sticker (per-chat or global toggle)
