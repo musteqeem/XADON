@@ -1,5 +1,5 @@
-module.exports = {
 const botstate = require('../../lib/botstate');
+module.exports = {
   name: 'info',
   alias: ['about', 'xadon'],
   desc: 'About XADON AI',
