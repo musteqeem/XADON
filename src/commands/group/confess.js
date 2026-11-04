@@ -1,7 +1,7 @@
 // XADON · confess — anonymous confession posted by the bot (sender hidden).
 module.exports = {
   name: 'confess',
-  alias: ['confession', 'anonmsg', 'secretmsg'],
+  alias: ['confession', 'anonconfess'],
   desc: 'Post an anonymous confession here',
   usage: '.confess I actually love Mondays',
   category: 'group',
