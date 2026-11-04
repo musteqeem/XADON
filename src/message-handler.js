@@ -115,6 +115,28 @@ const isWallOfText = (text = '') => { const t = String(text); return t.split(/\r
 const BET_PATTERNS = [/\b(odd|odds|stake|parlay|accumulator)\b/i, /bet9ja|sportybet|1xbet|betway|nairabet/i, /sure\s+odds/i, /fixed\s+match/i, /correct\s+score\s+tip/i];
 const isBetting = (text = '') => BET_PATTERNS.some((re) => re.test(String(text)));
 
+// ── V10 · 8 NEWER anti detectors ──
+const hasZalgo = (text = '') => { const t = String(text); if (/[\u202A-\u202E\u2066-\u2069\u200B-\u200F\uFEFF]/.test(t)) return true; return ((t.match(/[\u0300-\u036F]/g) || []).length >= 3); };
+const isSocialLink = (text = '') => /(tiktok\.com|instagram\.com|facebook\.com|fb\.com|fb\.watch|twitter\.com|x\.com|youtube\.com|youtu\.be|snapchat\.com|threads\.net|likee\.video|triller\.co)[^\s]*/i.test(String(text));
+const FRAUD_WORDS = ['double your money', 'double your cash', 'double your investment', 'send.*back double', 'forex doubler', 'binary doubler', 'account upgrade', 'dm for upgrade', 'activation fee', 'claim your grant', 'claim your fund', 'yahoo format', 'pick your money', 'sakawa', 'exam expo', 'waec runs', 'jamb runs', 'neco runs', 'miracle centre', 'miracle center', 'upgrade your account'];
+const MONEY_WORDS = ['bank', 'account', 'transfer', 'send money', 'opay', 'palmpay', 'moniepoint', 'momo', 'donate', 'contribution'];
+const isFraud = (text = '') => {
+  const t = String(text); const low = ` ${t.toLowerCase()} `;
+  if (/0x[a-f0-9]{30,}/i.test(t)) return true;
+  if (/\b(bc1|[13])[a-z0-9]{25,40}\b/i.test(t)) return true;
+  if (/\b\d{10}\b/.test(t) && MONEY_WORDS.some((w) => low.includes(w))) return true;
+  return FRAUD_WORDS.some((w) => low.includes(w));
+};
+const PROMO_WORDS = ['promo', 'discount', '% off', 'buy now', 'buy 1 get', 'order now', 'dm to order', 'dm to buy', 'price list', 'wholesale', 'free delivery', 'awoof', 'limited offer', 'shop now', 'vendor', 'jumia', 'konga', 'flash sale', 'clearance sale'];
+const isPromo = (text = '') => { const low = ` ${String(text).toLowerCase()} `; let n = 0; for (const w of PROMO_WORDS) if (low.includes(w)) n++; return n >= 2; };
+const POLITICS_WORDS = [' apc ', ' pdp ', 'labour party', 'vote for', 'vote buying', 'rigging', ' pvc ', 'campaign rally', 'electoral', 'ballot snatch', 'apc!', 'pdp!'];
+const isPolitics = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return POLITICS_WORDS.some((w) => low.includes(w)); };
+const LOAN_WORDS = ['instant loan', 'loan app', 'no collateral', 'fairmoney', 'carbon loan', 'branch loan', 'palmcredit', 'aella credit', 'loan without', 'borrow now', 'quick loan', 'easy loan', 'collateral-free', 'renmoney', 'okash'];
+const isLoan = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return LOAN_WORDS.some((w) => low.includes(w)); };
+const CRYPTO_WORDS = ['100x', '1000x', 'pump signal', 'presale', 'to the moon', 'gem coin', 'futures signal', 'copy trading', 'forex signal', 'deriv bot', 'quotex', 'pocket option', 'binance signal', 'buy the dip'];
+const isCrypto = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return CRYPTO_WORDS.some((w) => low.includes(w)); };
+const hopLog = new Map(); // `${chat}:${sender}` -> [leave timestamps]
+
 async function participantAdmin(sock, jid, sender) {
   try {
     const meta = await sock.groupMetadata(jid);
@@ -264,6 +286,8 @@ async function handleMessage(sock, raw) {
   const isGroupStatusMsg = /groupStatusMessage|groupStatus/i.test(rawStr);
   const isStatusReply = /status@broadcast/i.test(rawStr) && !!m.quoted;
   const ugBlob = `${m.body || ''}`;
+  const _px = String(db.get('prefix', config.prefix) || '.');
+  const isCmdText = (m.body || '').startsWith(_px) && /[a-z]/i.test(String(m.body || '').slice(_px.length, _px.length + 1));
 
   // [active?, reason, ruleKey] — every rule carries its warn/kick mode.
   const rules = [
@@ -317,6 +341,16 @@ async function handleMessage(sock, raw) {
     [modeActive(policy, 'antisurvey') && isScam(m.body), XADON_AN('Message removed: giveaway/scam messages are not allowed here'), 'antisurvey'],
     [modeActive(policy, 'antiwall') && isWallOfText(m.body), XADON_AN('Message removed: walls of text are not allowed here'), 'antiwall'],
     [modeActive(policy, 'antibet') && isBetting(m.body), XADON_AN('Message removed: betting/gambling tips are not allowed here'), 'antibet'],
+    // ── V10 · 9 NEWER antis ──
+    [modeActive(policy, 'antizalgo') && hasZalgo(m.body), XADON_AN('Zalgo removed: weird unicode abuse is not allowed here'), 'antizalgo'],
+    [modeActive(policy, 'anticommand') && isCmdText, XADON_AN('Command removed: only admins can use bot commands here'), 'anticommand'],
+    [modeActive(policy, 'antisocial') && isSocialLink(m.body), XADON_AN('Social link removed: social-media links are disabled here'), 'antisocial'],
+    [modeActive(policy, 'antifraud') && isFraud(m.body), XADON_AN('Scam removed: money-fraud messages are not allowed here'), 'antifraud'],
+    [modeActive(policy, 'antipromo') && isPromo(m.body), XADON_AN('Promo removed: adverts are not allowed here'), 'antipromo'],
+    [modeActive(policy, 'antipolitics') && isPolitics(m.body), XADON_AN('Politics removed: campaign messages are not allowed here'), 'antipolitics'],
+    [modeActive(policy, 'antimedia') && !!m.isMedia, XADON_AN('Media removed: this group is text-only right now'), 'antimedia'],
+    [modeActive(policy, 'antiloan') && isLoan(m.body), XADON_AN('Loan spam removed: loan adverts are not allowed here'), 'antiloan'],
+    [modeActive(policy, 'anticrypto') && isCrypto(m.body), XADON_AN('Crypto removed: crypto signals and hype are not allowed here'), 'anticrypto'],
   ];
   for (const [hit, reason, rule] of rules) {
     if (hit && await enforce(sock, raw, jid, m.sender, m.number, reason, rule)) return true;
@@ -330,6 +364,8 @@ async function handleMessage(sock, raw) {
       capsShout(ugBlob) || emojiCount(ugBlob) >= 8 || forwarded ||
       isCodeBlock(ugBlob) || hasFancyFont(ugBlob) || isCloudLink(ugBlob) || isApkLink(ugBlob) ||
       hasNsfw(ugBlob) || isScam(ugBlob) || isWallOfText(ugBlob) || isBetting(ugBlob) ||
+      hasZalgo(ugBlob) || isSocialLink(ugBlob) || isFraud(ugBlob) || isPromo(ugBlob) ||
+      isPolitics(ugBlob) || isLoan(ugBlob) || isCrypto(ugBlob) || !!m.isMedia || isCmdText ||
       looksBot(raw, m.pushName) || (m.mentions || []).length >= 4;
     if (ugHit && await enforce(sock, raw, jid, m.sender, m.number, XADON_AN('Ultimate guard: unwanted content is blocked while ANTIUG is on'), 'antiug')) return true;
   }
@@ -363,6 +399,22 @@ async function handleParticipantsUpdate(sock, update) {
     const key = `${update.id}:${digit(jid)}`;
     if (update.action === 'add') {
       joinAt.set(key, Date.now()); // newcomer guard timestamp
+      // V10 · antihopper: punish rapid leave-and-rejoin cycles
+      try {
+        const hops = (hopLog.get(key) || []).filter((t) => Date.now() - t < 30 * 60_000);
+        if (hops.length >= 2 && modeActive(policy, 'antihopper')) {
+          const hmode = modeOf(policy.antihopper);
+          const htag = `@${digit(jid)}`;
+          const meta = await sock.groupMetadata(update.id).catch(() => null);
+          const bot = meta?.participants?.find((p) => [p.id, p.jid, p.lid].filter(Boolean).some((v) => digit(v) === digit(sock.user?.id)));
+          if (hmode === 'kick' && bot?.admin) {
+            await sock.groupParticipantsUpdate(update.id, [jid], 'remove').catch(() => {});
+            await sock.sendMessage(update.id, { text: XADON_AN(`Hopper removed: ${htag} keeps leaving and rejoining.`), mentions: [jid] }).catch(() => {});
+          } else {
+            await sock.sendMessage(update.id, { text: XADON_AN(`Hopper warning — ${htag}: stop leaving and rejoining (anti-hopper).`), mentions: [jid] }).catch(() => {});
+          }
+        }
+      } catch {}
       const entry = tempKicks.get(key);
       if (entry && entry.expiresAt > Date.now()) {
         try {
@@ -376,13 +428,22 @@ async function handleParticipantsUpdate(sock, update) {
       if (policy.welcome) {
         const text = (policy.welcomeText || 'Welcome @user to @group!').replace(/@user/g, `@${digit(jid)}`).replace(/@group/g, policy.groupName || 'the group');
         await sock.sendMessage(update.id, { text, mentions: [jid] }).catch(() => {});
+      } else if (db.get('autowelcome', false)) {
+        try {
+          const meta = await sock.groupMetadata(update.id).catch(() => null);
+          const gname = policy.groupName || meta?.subject || 'the group';
+          await sock.sendMessage(update.id, { text: `👋 Welcome @${digit(jid)} to *${gname}*!\nRead the rules, introduce yourself and enjoy.`, mentions: [jid] }).catch(() => {});
+        } catch {}
       }
     }
     if (update.action === 'remove') {
       joinAt.delete(key);
+      try { const arr = (hopLog.get(key) || []).concat(Date.now()).slice(-5); hopLog.set(key, arr); if (hopLog.size > 2000) for (const k of [...hopLog.keys()].slice(0, 500)) hopLog.delete(k); } catch {}
       if (policy.goodbye) {
         const text = (policy.goodbyeText || 'Goodbye @user.').replace(/@user/g, `@${digit(jid)}`).replace(/@group/g, policy.groupName || 'the group');
         await sock.sendMessage(update.id, { text, mentions: [jid] }).catch(() => {});
+      } else if (db.get('autogoodbye', false)) {
+        await sock.sendMessage(update.id, { text: `👋 @${digit(jid)} left *${policy.groupName || 'the group'}*. We wish them well.`, mentions: [jid] }).catch(() => {});
       }
     }
   }
