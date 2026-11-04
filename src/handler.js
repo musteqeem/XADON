@@ -56,8 +56,15 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
   const isMod = privs.isModNumber(db, m.number);
   const isSudo = isHardOwner || isMod || privs.isSudoNumber(db, m.number);
   const isOwner = isHardOwner || isMod; // mods = FULL owner access; sudo = near-owner (no owner cmds)
+  // V10 · autosleep: the whole bot ignores non-privileged users 23:00–05:00 Lagos
+  try {
+    if (db.get('autosleep', false) && !isSudo) {
+      const hr = Number(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos', hour: 'numeric', hour12: false }));
+      if ([23, 0, 1, 2, 3, 4].includes(hr)) return;
+    }
+  } catch {}
   // V7 · format-aware reply: custom per-command text + active reply format (default/mono/media/rich)
-  const reply = (text, extra = {}) => {
+  const replyRaw = (text, extra = {}) => {
     try {
       const custom = fmt.getCustom(cmd.name);
       if (custom && typeof text === 'string' && text) {
@@ -66,6 +73,17 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
       }
     } catch {}
     return fmt.sendFormatted(sock, m.chat, text, { quoted: premium.settings().verified ? 'verified' : raw, ...extra });
+  };
+  // V10 · autoclean: auto-delete the bot's own replies 60s after sending
+  const reply = async (text, extra = {}) => {
+    const sent = await replyRaw(text, extra);
+    try {
+      if (db.get('autoclean', false) && sent?.key) {
+        const k = sent.key;
+        setTimeout(() => sock.sendMessage(m.chat, { delete: k }).catch(() => {}), 60000).unref?.();
+      }
+    } catch {}
+    return sent;
   };
   const fail = (title, text) => fmt.sendFormatted(sock, m.chat, ui.notice('error', title, text), { quoted: premium.settings().verified ? 'verified' : raw });
 
@@ -189,10 +207,18 @@ async function handle(sock, raw) {
       try { await sock.sendPresenceUpdate('unavailable'); } catch {}
     }
 
+    // V10 · autoblock: strangers DMing the bot get blocked instantly
+    try {
+      if (!m.isGroup && !m.fromMe && !isPriv && vdb.get('autoblock', false)) {
+        await sock.updateBlockStatus(m.chat, 'block').catch(() => {});
+        return;
+      }
+    } catch {}
+
     if (!m.fromMe && !isCmd && m.type !== 'reactionMessage') {
       // 1 · owner-tag responder (.mention) + busy fallback (.busymode)
       try {
-        const mention = require('./commands/xadon9/mention');
+        const mention = require('./commands/owner/mention');
         if (!isPriv && mention.ownerTagged(m)) {
           const r = await mention.doRespond(sock, raw, m, vdb);
           const busy = vdb.get('busy', {});
@@ -227,6 +253,68 @@ async function handle(sock, raw) {
             await sock.sendMessage(m.chat, { text: `${answer}\n\n⌬ ${provider}` }, { quoted: raw }).catch(() => {});
             try { await sock.sendPresenceUpdate('paused', m.chat).catch(() => {}); } catch {}
             return;
+          }
+        }
+      } catch {}
+
+      // 4 · autogreet (.autogreet) — greetings in private chats get a canned hello
+      try {
+        if (!m.isGroup && !isPriv && vdb.get('autogreet', false) && /^(hi|hii+|hello|hey|yo|good\s?(morning|afternoon|evening|day)|sup|how far|howfa)\b/i.test((m.body || '').trim())) {
+          await sock.sendMessage(m.chat, { text: `Hello ${m.pushName || 'there'}! I am *${config.botName}*. Send *${px}menu* to see what I can do.` }, { quoted: raw }).catch(() => {});
+          return;
+        }
+      } catch {}
+
+      // 5 · autovv (.autovv) — rescue every incoming view-once to the owner DM
+      try {
+        if (vdb.get('autovv', false) && !isPriv) {
+          const rawStr = (() => { try { return JSON.stringify(raw.message || ''); } catch { return ''; } })();
+          if (/viewOnce/i.test(rawStr)) {
+            try {
+              const { downloadMediaMessage } = require('@musteqeem/baileys');
+              const buf = await downloadMediaMessage(raw, 'buffer', {});
+              const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
+              const cap = `AUTO-VV from @${digits(m.sender)} (${m.isGroup ? 'group' : 'dm'})`;
+              await sock.sendMessage(ownerJid, { image: buf, caption: cap }).catch(async () => { await sock.sendMessage(ownerJid, { video: buf, caption: cap }).catch(() => {}); });
+            } catch {}
+          }
+        }
+      } catch {}
+
+      // 6 · autonotify (.autonotify) — owner gets a DM snippet whenever tagged
+      try {
+        if (m.isGroup && vdb.get('autonotify', false)) {
+          const ownerDigits = String(config.ownerNumbers[0]).replace(/\D/g, '');
+          if ((m.mentions || []).some((j) => digits(j) === ownerDigits)) {
+            const ownerJid = `${ownerDigits}@s.whatsapp.net`;
+            const snippet = String(m.body || '[media]').slice(0, 300);
+            await sock.sendMessage(ownerJid, { text: `You were tagged by @${digits(m.sender)}:\n\n${snippet}`, mentions: [m.sender] }).catch(() => {});
+          }
+        }
+      } catch {}
+
+      // 7 · autokeyword (.autokeyword) — DM the owner when watched words appear
+      try {
+        const kw = vdb.get('autokeyword', {});
+        if (kw.on && Array.isArray(kw.words) && kw.words.length && !isPriv && m.body) {
+          const low = ` ${String(m.body).toLowerCase()} `;
+          const hit = kw.words.find((w) => w && low.includes(String(w).toLowerCase()));
+          if (hit) {
+            const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
+            await sock.sendMessage(ownerJid, { text: `Keyword "${hit}" mentioned by @${digits(m.sender)}${m.isGroup ? ' in a group' : ' in DM'}:\n\n${String(m.body).slice(0, 300)}`, mentions: [m.sender] }).catch(() => {});
+          }
+        }
+      } catch {}
+
+      // 8 · autofwd (.autofwd) — mirror armed chats to the owner DM
+      try {
+        if (!m.fromMe && vdb.get(`autofwd:${m.chat}`, false)) {
+          const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
+          if (m.chat !== ownerJid) {
+            try {
+              if (typeof sock.copyNForward === 'function') await sock.copyNForward(ownerJid, raw, true).catch(() => {});
+              else await sock.sendMessage(ownerJid, { forward: raw }).catch(() => {});
+            } catch {}
           }
         }
       } catch {}
