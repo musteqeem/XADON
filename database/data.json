@@ -1,1 +1,27 @@
-{}
+{
+  "groupPolicy:120363000000000@g.us": {
+    "antizalgo": false,
+    "groupName": "Test Group",
+    "anticommand": false,
+    "antisocial": false,
+    "antifraud": false,
+    "antipromo": false,
+    "antipolitics": false,
+    "antiloan": false,
+    "anticrypto": false,
+    "antimedia": false,
+    "antihopper": false
+  },
+  "autowelcome": false,
+  "autogoodbye": false,
+  "autogreet": false,
+  "autoblock": false,
+  "autofwd:120363@g.us": false,
+  "autonotify": false,
+  "autokeyword": {
+    "on": false,
+    "words": []
+  },
+  "autosleep": false,
+  "autoclean": false
+}
