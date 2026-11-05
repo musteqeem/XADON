@@ -1,5 +1,9 @@
 /**
- * XADON V9 · mention — owner tag auto-responder.
+ * XADON V11 · mention — owner tag auto-responder (LID/JID-proof).
+ *
+ * Triggers when the owner is tagged in ANY form:
+ *   @owner mention · reply to owner's message · raw number typed
+ *   (2348000000000 or @2348000000000 — JID/LID confusion bypassed)
  *
  *   .mention -r 😎            → react with 😎 whenever the owner is tagged
  *   .mention -r sticker        → (reply to a sticker) sticker-react when tagged
@@ -31,15 +35,56 @@ function setCfg(db, patch) {
   return next;
 }
 
-const digits = (jid = '') => String(jid).split('@')[0].split(':')[0];
-const ownerDigits = () => (config.ownerNumbers || []).map((n) => String(n).replace(/\D/g, ''));
+const digits = (jid = '') => String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
+const ownerDigits = () => (config.ownerNumbers || []).map((n) => String(n).replace(/\D/g, '')).filter(Boolean);
 
-/** True when the message tags (mentions) the owner. */
+/**
+ * XADON V11 · owner match that survives the WhatsApp LID/JID mess.
+ * A mention can arrive as phone JID (234...@s.whatsapp.net), LID
+ * (12345@lid) or a bare push-name tag — so we match flexibly:
+ * exact digits OR same last-9-digits (both sides 10+ digits long).
+ */
+function sameOwner(a = '', b = '') {
+  const x = String(a).replace(/\D/g, '');
+  const y = String(b).replace(/\D/g, '');
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.length >= 10 && y.length >= 10 && x.slice(-9) === y.slice(-9)) return true;
+  return false;
+}
+function isOwnerJid(jid = '') {
+  try {
+    const d = digits(jid);
+    if (!d) return false;
+    return ownerDigits().some((o) => sameOwner(d, o));
+  } catch { return false; }
+}
+
+/**
+ * True when the message tags the owner — via ANY of:
+ *  1. structured mention (phone JID or LID form)
+ *  2. reply to the owner's message (quoted sender is the owner)
+ *  3. raw number typed in the text: 2348000000000 or @2348000000000
+ */
 function ownerTagged(m) {
   try {
     const owners = ownerDigits();
     if (!owners.length) return false;
-    return (m.mentions || []).some((j) => owners.includes(digits(j)));
+    const hit = (d) => d && owners.some((o) => sameOwner(d, o));
+    // 1 · structured mentions (covers JID + LID mention forms)
+    for (const j of (m.mentions || [])) { if (hit(digits(j))) return true; }
+    // also cover alternate sender fields some Baileys versions fill
+    for (const j of [m.senderAlt].filter(Boolean)) { if (hit(digits(j))) return true; }
+    // 2 · replying to the owner counts as tagging the owner
+    if (m.quoted?.sender && hit(digits(m.quoted.sender))) return true;
+    // 3 · raw number in the text body (234... or @234...)
+    const body = String(m.body || '');
+    const chunks = body.match(/@?\+?\d{7,15}/g) || [];
+    for (const c of chunks) {
+      const d = String(c).replace(/\D/g, '');
+      if (d.length >= 7 && hit(d)) return true;
+    }
+    return false;
   } catch { return false; }
 }
 
@@ -113,6 +158,7 @@ function statusCard(ui, db) {
       '.mention -m 😎 · -m sticker (reply)',
       '.mention -m <custom reply text>',
       '.mention on · off · -r off · -m off',
+      'Triggers: @tag · reply to owner · raw number (234… / @234…)',
     ].join('\n'),
   });
 }
@@ -124,7 +170,7 @@ module.exports = {
   usage: '.mention -r 😎 | .mention -m <text> | .mention on/off/status',
   category: 'owner',
   owner: true,
-  getCfg, setCfg, ownerTagged, doRespond, R_FILE, M_FILE,
+  getCfg, setCfg, ownerTagged, isOwnerJid, sameOwner, doRespond, R_FILE, M_FILE,
   async run({ sock, m, args, reply, ui, db, prefix }) {
     const sub = String(args[0] || '').toLowerCase();
 
