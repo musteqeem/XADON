@@ -23,5 +23,7 @@
     "words": []
   },
   "autosleep": false,
-  "autoclean": false
+  "autoclean": false,
+  "sudos": [],
+  "mods": []
 }
