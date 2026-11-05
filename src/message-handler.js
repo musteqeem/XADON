@@ -136,6 +136,38 @@ const isLoan = (text = '') => { const low = ` ${String(text).toLowerCase()} `; r
 const CRYPTO_WORDS = ['100x', '1000x', 'pump signal', 'presale', 'to the moon', 'gem coin', 'futures signal', 'copy trading', 'forex signal', 'deriv bot', 'quotex', 'pocket option', 'binance signal', 'buy the dip'];
 const isCrypto = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return CRYPTO_WORDS.some((w) => low.includes(w)); };
 const hopLog = new Map(); // `${chat}:${sender}` -> [leave timestamps]
+// V11 · antikickall watch: `${chat}:${authorDigits}` -> [remove timestamps]
+const kickWatch = new Map();
+// V11 · slowmode buckets: `${chat}:${sender}` -> last message timestamp
+const slowHits = new Map();
+// V11 · slowmode warn throttle: `${chat}:${sender}` -> last warn timestamp
+const slowWarned = new Map();
+// V11 · recent message keys ring (for .vanish bulk-delete). Newest last, cap 400.
+const recentKeys = [];
+/** Last N message keys from a sender in a chat (excludes one id, e.g. the command itself). */
+function recentBySender(chat, sender, excludeId = null, limit = 20) {
+  try {
+    const want = String(sender || '').split('@')[0].split(':')[0];
+    return recentKeys
+      .filter((e) => e.chat === chat && e.id !== excludeId && String(e.sender || '').split('@')[0].split(':')[0] === want)
+      .slice(-Math.max(1, Math.min(limit, 50)))
+      .reverse();
+  } catch { return []; }
+}
+
+/** V11 · append to the persistent left/kicked member logs (capped at 500/chat). */
+function pushMemberLog(chat, kind, entry) {
+  try {
+    const k = `memberlog:${kind}:${chat}`;
+    const arr = db.get(k, []);
+    arr.push({ ...entry, at: Date.now() });
+    db.set(k, arr.slice(-500));
+  } catch {}
+}
+function getMemberLog(chat, kind, n = 500) {
+  try { return db.get(`memberlog:${kind}:${chat}`, []).slice(-n); } catch { return []; }
+}
+const ownerDmJid = () => `${String(config.ownerNumbers[0] || '').replace(/\D/g, '')}@s.whatsapp.net`;
 
 async function participantAdmin(sock, jid, sender) {
   try {
@@ -248,6 +280,10 @@ async function handleMessage(sock, raw) {
   const m = serialize(sock, raw);
   if (!m.isGroup) return false;
   const jid = m.chat;
+  try {
+    recentKeys.push({ chat: jid, id: m.id, sender: m.sender, participant: raw.key?.participant || m.sender, fromMe: !!raw.key?.fromMe });
+    if (recentKeys.length > 400) recentKeys.splice(0, recentKeys.length - 400);
+  } catch {}
   const policy = groupPolicy(jid);
   const { viewOnce, forwarded, forwardingScore } = rawContext(raw);
   // V8 · admin-tag detection needs the admin list (lazy, only when antiadmin is armed)
@@ -274,6 +310,47 @@ async function handleMessage(sock, raw) {
   } catch {}
 
   const rawStr = (() => { try { return JSON.stringify(raw.message || '').slice(0, 4000); } catch { return ''; } })();
+
+  // ── V11 · OWNERZONE + SLOWMODE (run before every other anti rule) ──
+  const _pxEarly = String(db.get('prefix', config.prefix) || '.');
+  const _isCmdEarly = (m.body || '').startsWith(_pxEarly);
+  // ownerzone: only owner-privileged senders may talk (commands still pass so admins can switch it off)
+  if (policy.ownerzone && !_isCmdEarly) {
+    try {
+      const privs = require('./lib/privs');
+      const num = String(m.sender).split('@')[0].split(':')[0].replace(/\D/g, '');
+      if (!privs.isSudoPriv(db, config, num)) {
+        const botAdmin = await participantAdmin(sock, jid, sock.user?.id || '');
+        if (botAdmin) await sock.sendMessage(jid, { delete: raw.key }).catch(() => {});
+        return true;
+      }
+    } catch {}
+  }
+  // slowmode: one message per N seconds (admins + owner-priv exempt)
+  if (Number(policy.slowmode) > 0) {
+    try {
+      const secs = Number(policy.slowmode);
+      const privs = require('./lib/privs');
+      const num = String(m.sender).split('@')[0].split(':')[0].replace(/\D/g, '');
+      const exempt = privs.isSudoPriv(db, config, num) || await participantAdmin(sock, jid, m.sender);
+      if (!exempt && (m.body || m.isMedia)) {
+        const sk = `${jid}:${digit(m.sender)}`;
+        const last = slowHits.get(sk) || 0;
+        slowHits.set(sk, Date.now());
+        if (slowHits.size > 2000) for (const k of [...slowHits.keys()].slice(0, 500)) slowHits.delete(k);
+        if (Date.now() - last < secs * 1000) {
+          const botAdmin = await participantAdmin(sock, jid, sock.user?.id || '');
+          if (botAdmin) await sock.sendMessage(jid, { delete: raw.key }).catch(() => {});
+          const lw = slowWarned.get(sk) || 0;
+          if (Date.now() - lw > 60000) {
+            slowWarned.set(sk, Date.now());
+            await sock.sendMessage(jid, { text: XADON_AN(`Slow mode: @${digit(m.sender)} wait ${secs}s between messages.`), mentions: [m.sender] }).catch(() => {});
+          }
+          return true;
+        }
+      }
+    } catch {}
+  }
   const isGif = m.type === 'videoMessage' && !!(m.message?.videoMessage?.gifPlayback);
   const isCallLog = /callLog|callLogMessage|callCreation/i.test(m.type || '') || /callLog/i.test(rawStr);
   const isChannelFwd = !!(rawContext(raw).ctx?.forwardedNewsletterMessageInfo) || /forwardedNewsletterMessageInfo/i.test(rawStr);
@@ -393,6 +470,34 @@ async function handleMessage(sock, raw) {
 async function handleParticipantsUpdate(sock, update) {
   if (!update?.id || !Array.isArray(update.participants)) return;
   const policy = groupPolicy(update.id);
+  const author = update.author || update.actor || null;
+  const authorNum = author ? String(author).split('@')[0].split(':')[0].replace(/\D/g, '') : '';
+  const botNum = String(sock.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  let privs = null;
+  try { privs = require('./lib/privs'); } catch {}
+  const authorPriv = !!(authorNum && (authorNum === botNum || (privs && privs.isSudoPriv(db, config, authorNum)) || (config.ownerNumbers || []).map(String).some((o) => String(o).replace(/\D/g, '') === authorNum)));
+  const botIsAdmin = async () => {
+    try {
+      const meta = await sock.groupMetadata(update.id);
+      return !!meta?.participants?.find((p) => [p.id, p.jid, p.lid, p.phoneNumber].filter(Boolean).some((v) => digit(v) === botNum || digit(v) === digit(sock.user?.id || '')))?.admin;
+    } catch { return false; }
+  };
+  // V11 · revert an unauthorized promote/demote, then warn.
+  const revertRole = async (victim, toAdmin, kind) => {
+    try {
+      if (!await botIsAdmin()) {
+        await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: @${digit(author)} changed @${digit(victim)} but I am not admin so I cannot revert it.`), mentions: [author, victim].filter(Boolean) }).catch(() => {});
+        return;
+      }
+      await sock.groupParticipantsUpdate(update.id, [victim], toAdmin ? 'promote' : 'demote').catch(() => {});
+      await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: unauthorized ${kind} by @${digit(author)} reverted (@${digit(victim)} restored).`), mentions: [author, victim].filter(Boolean) }).catch(() => {});
+      try {
+        if (db.get(`kicklog:${update.id}`, false)) {
+          await sock.sendMessage(ownerDmJid(), { text: `Anti-${kind} @ ${(policy.groupName || update.id)}: ${authorNum} tried to ${kind} ${digit(victim)} — reverted.` }).catch(() => {});
+        }
+      } catch {}
+    } catch {}
+  };
   for (const participant of update.participants) {
     const jid = typeof participant === 'string' ? participant : participant.id || participant.jid;
     if (!jid) continue;
@@ -439,12 +544,56 @@ async function handleParticipantsUpdate(sock, update) {
     if (update.action === 'remove') {
       joinAt.delete(key);
       try { const arr = (hopLog.get(key) || []).concat(Date.now()).slice(-5); hopLog.set(key, arr); if (hopLog.size > 2000) for (const k of [...hopLog.keys()].slice(0, 500)) hopLog.delete(k); } catch {}
+      // V11 · left-vs-kicked tracking: kicked when someone else did the removal.
+      const wasKicked = !!(author && digit(author) !== digit(jid));
+      try { pushMemberLog(update.id, wasKicked ? 'kicked' : 'left', { jid, by: author || 'unknown', name: '' }); } catch {}
+      // V11 · ANTIKICKALL: an admin mass-removing members gets demoted fast.
+      try {
+        if (wasKicked && modeActive(policy, 'antikickall') && !authorPriv) {
+          const wk = `${update.id}:${authorNum || digit(author)}`;
+          const now = Date.now();
+          const limit = Math.max(2, Number(policy.antikickallLimit) || 3);
+          const arr = (kickWatch.get(wk) || []).filter((t) => now - t < 120000);
+          arr.push(now);
+          kickWatch.set(wk, arr);
+          if (kickWatch.size > 1000) for (const k of [...kickWatch.keys()].slice(0, 200)) kickWatch.delete(k);
+          if (arr.length >= limit) {
+            kickWatch.delete(wk);
+            if (await botIsAdmin()) {
+              await sock.groupParticipantsUpdate(update.id, [author], 'demote').catch(() => {});
+              await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} was demoted for mass-removing members (${arr.length} in 2 min).`), mentions: [author] }).catch(() => {});
+            } else {
+              await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} is mass-removing members but I am not admin — make me admin!`), mentions: [author] }).catch(() => {});
+            }
+            try { await sock.sendMessage(ownerDmJid(), { text: `ANTIKICKALL @ ${policy.groupName || update.id}: ${authorNum} removed ${arr.length} members in 2 min — demoted.` }).catch(() => {}); } catch {}
+          }
+        }
+      } catch {}
+      // V11 · ANTILEFT notice + KICKLOG owner-DM mirror.
+      try {
+        if (modeActive(policy, 'antileft')) {
+          await sock.sendMessage(update.id, { text: wasKicked ? XADON_AN(`Member removed: @${digit(jid)} was taken out by @${digit(author)}.`) : XADON_AN(`Member left: @${digit(jid)} walked out.`), mentions: [jid, author].filter(Boolean) }).catch(() => {});
+        }
+        if (db.get(`kicklog:${update.id}`, false)) {
+          await sock.sendMessage(ownerDmJid(), { text: `${wasKicked ? 'KICK' : 'LEFT'} @ ${policy.groupName || update.id}: ${digit(jid)}${wasKicked ? ` by ${authorNum}` : ''}` }).catch(() => {});
+        }
+      } catch {}
       if (policy.goodbye) {
         const text = (policy.goodbyeText || 'Goodbye @user.').replace(/@user/g, `@${digit(jid)}`).replace(/@group/g, policy.groupName || 'the group');
         await sock.sendMessage(update.id, { text, mentions: [jid] }).catch(() => {});
       } else if (db.get('autogoodbye', false)) {
         await sock.sendMessage(update.id, { text: `👋 @${digit(jid)} left *${policy.groupName || 'the group'}*. We wish them well.`, mentions: [jid] }).catch(() => {});
       }
+    }
+    // V11 · ANTIDEMOTE / ANTIPROMOTE: revert unauthorized role changes.
+    if ((update.action === 'demote' || update.action === 'promote') && author && digit(author) !== digit(jid)) {
+      try {
+        if (update.action === 'demote' && modeActive(policy, 'antidemote') && !authorPriv) await revertRole(jid, true, 'demote');
+        if (update.action === 'promote' && modeActive(policy, 'antipromote') && !authorPriv) await revertRole(jid, false, 'promote');
+        if (db.get(`kicklog:${update.id}`, false)) {
+          await sock.sendMessage(ownerDmJid(), { text: `${String(update.action).toUpperCase()} @ ${policy.groupName || update.id}: ${authorNum} -> ${digit(jid)}` }).catch(() => {});
+        }
+      } catch {}
     }
   }
 }
@@ -473,4 +622,4 @@ async function scheduleTempKick(sock, groupJid, userJid, durationMs) {
   return expiresAt;
 }
 
-module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded };
+module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded, pushMemberLog, getMemberLog, recentBySender };
