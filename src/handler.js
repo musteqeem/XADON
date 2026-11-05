@@ -282,11 +282,12 @@ async function handle(sock, raw) {
       } catch {}
 
       // 6 · autonotify (.autonotify) — owner gets a DM snippet whenever tagged
+      // V11 · LID/JID-proof: reuses mention.ownerTagged (tag · reply · raw number).
       try {
         if (m.isGroup && vdb.get('autonotify', false)) {
-          const ownerDigits = String(config.ownerNumbers[0]).replace(/\D/g, '');
-          if ((m.mentions || []).some((j) => digits(j) === ownerDigits)) {
-            const ownerJid = `${ownerDigits}@s.whatsapp.net`;
+          const mentionN = require('./commands/owner/mention');
+          if (mentionN.ownerTagged(m)) {
+            const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
             const snippet = String(m.body || '[media]').slice(0, 300);
             await sock.sendMessage(ownerJid, { text: `You were tagged by @${digits(m.sender)}:\n\n${snippet}`, mentions: [m.sender] }).catch(() => {});
           }
@@ -315,6 +316,28 @@ async function handle(sock, raw) {
               if (typeof sock.copyNForward === 'function') await sock.copyNForward(ownerJid, raw, true).catch(() => {});
               else await sock.sendMessage(ownerJid, { forward: raw }).catch(() => {});
             } catch {}
+          }
+        }
+      } catch {}
+
+      // 9 · V11 autotranslate (.autotranslate) — per-chat live translation.
+      // Any message not already in the chat's target language is translated
+      // and the translation is posted as a reply. `dm on` also mirrors to owner DM.
+      try {
+        const atCfg = vdb.get(`autotranslate:${m.chat}`, null);
+        if (!m.fromMe && atCfg?.on && m.body && !isCmd && !/^reactionMessage/i.test(m.type || '')) {
+          const q = String(m.body).slice(0, 500).trim();
+          if (q.length >= 3) {
+            const { translate, normLang } = require('./lib/translate');
+            const target = normLang(atCfg.lang || 'en') || 'en';
+            const r = await translate(q, target).catch(() => null);
+            if (r?.text && r.text.trim().toLowerCase() !== q.toLowerCase()) {
+              await sock.sendMessage(m.chat, { text: `◐ AUTO-TR · ${r.source || 'auto'} → ${target}\n${r.text.slice(0, 1200)}` }, { quoted: raw }).catch(() => {});
+              if (atCfg.dm) {
+                const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
+                if (m.chat !== ownerJid) await sock.sendMessage(ownerJid, { text: `AUTO-TR [${m.isGroup ? 'group' : 'dm'}] @${digits(m.sender)} (${r.source || 'auto'}→${target}):\n${r.text.slice(0, 800)}`, mentions: [m.sender] }).catch(() => {});
+              }
+            }
           }
         }
       } catch {}
