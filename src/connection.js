@@ -143,6 +143,26 @@ async function connect() {
           at: cached?.at || Date.now(),
         };
         store.pushDelete(chat, entry);
+        // V12 · DELETEDP: forward every deleted message (+media) to the owner DM.
+        try {
+          const dbo = require('./lib/database');
+          if (dbo.get('deletedp', false)) {
+            const ownerJid = `${String(config.ownerNumbers[0] || '').replace(/\D/g, '')}@s.whatsapp.net`;
+            if (ownerJid !== '@s.whatsapp.net') {
+              const { repost } = require('./lib/mediacache');
+              const gname = (() => { try { return (messageEvents.groupPolicy(chat) || {}).groupName || chat; } catch { return chat; } })();
+              await repost(sock, chat, ownerJid, entry, `🗑 DELETED @ ${gname}`).catch(() => {});
+            }
+          }
+        } catch {}
+        // V12 · DELWATCH: re-post deleted messages (+media) back into the same chat.
+        try {
+          const pol = messageEvents.groupPolicy ? messageEvents.groupPolicy(chat) : {};
+          if (pol.delwatch) {
+            const { repost } = require('./lib/mediacache');
+            await repost(sock, chat, chat, entry, '♻ DELWATCH caught').catch(() => {});
+          }
+        } catch {}
         if (chat.endsWith('@g.us') && policy.antidelete) {
           const who = entry.sender ? '@' + String(entry.sender).split('@')[0].split(':')[0] : 'Someone';
           const preview = (entry.body || `[${entry.type}]`).slice(0, 300);
