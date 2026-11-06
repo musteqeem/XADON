@@ -155,6 +155,13 @@ function recentBySender(chat, sender, excludeId = null, limit = 20) {
   } catch { return []; }
 }
 
+/** V12 · last N message keys of a whole chat (newest last). Powers .topactive / .mystats. */
+function getRecent(chat, n = 400) {
+  try {
+    return recentKeys.filter((e) => e.chat === chat).slice(-Math.max(1, Math.min(n, 400)));
+  } catch { return []; }
+}
+
 /** V11 · append to the persistent left/kicked member logs (capped at 500/chat). */
 function pushMemberLog(chat, kind, entry) {
   try {
@@ -622,4 +629,4 @@ async function scheduleTempKick(sock, groupJid, userJid, durationMs) {
   return expiresAt;
 }
 
-module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded, pushMemberLog, getMemberLog, recentBySender };
+module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded, pushMemberLog, getMemberLog, recentBySender, getRecent };
