@@ -183,6 +183,8 @@ async function handle(sock, raw) {
 
   // record into msgstore (for .deleted / .quoted) + rawstore (for .quotedeep)
   try { rawstore.push(m.chat, raw); } catch {}
+  // V12 · snapshot incoming media (non-blocking) so deletes stay recoverable
+  try { require('./lib/mediacache').prefetch(sock, raw, m); } catch {}
   try {
     store.push(m.chat, {
       id: m.id, sender: m.sender, pushName: m.pushName, type: m.type,
@@ -337,6 +339,30 @@ async function handle(sock, raw) {
                 const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
                 if (m.chat !== ownerJid) await sock.sendMessage(ownerJid, { text: `AUTO-TR [${m.isGroup ? 'group' : 'dm'}] @${digits(m.sender)} (${r.source || 'auto'}→${target}):\n${r.text.slice(0, 800)}`, mentions: [m.sender] }).catch(() => {});
               }
+            }
+          }
+        }
+      } catch {}
+
+      // 10 · V13 track (.track) — mirror a tracked person's messages to owner DM.
+      try {
+        const list = vdb.get('tracklist', []);
+        if (Array.isArray(list) && list.length && !m.fromMe && m.sender) {
+          const { sameTarget } = require('./commands/owner/track');
+          const hit = list.some((t) => { try { return sameTarget(t, m.number || m.sender); } catch { return false; } });
+          if (hit) {
+            const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
+            if (m.chat !== ownerJid) {
+              const mc = require('./lib/mediacache');
+              try {
+                if (m.isMedia) {
+                  const { downloadMediaMessage } = require('@musteqeem/baileys');
+                  const buf = await downloadMediaMessage(raw, 'buffer', {}).catch(() => null);
+                  if (buf?.length) mc.save(m.chat, m.id, buf, { type: m.type, caption: (m.body || '').slice(0, 500), sender: m.sender, pushName: m.pushName });
+                }
+              } catch {}
+              const where = m.isGroup ? `group ${(m.chat || '').split('@')[0]}` : 'DM';
+              await mc.repost(sock, m.chat, ownerJid, { id: m.id, sender: m.sender, type: m.type, body: (m.body || '').slice(0, 1000) }, `👁 TRACK @ ${where}`).catch(() => {});
             }
           }
         }
