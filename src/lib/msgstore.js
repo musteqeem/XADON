@@ -56,6 +56,14 @@ function clearDeleted(chat) {
   try { db.set(`deleted:${chat}`, []); } catch {}
 }
 
+/** V12 · recent in-memory messages of a chat (newest last). For .savechat export. */
+function listByChat(chat, n = 50) {
+  try {
+    const list = MEM.get(chat) || [];
+    return list.slice(-Math.max(1, Math.min(n, MAX_MEM)));
+  } catch { return []; }
+}
+
 function pushStatus(entry) {
   try {
     const arr = db.get('statusCache', []);
@@ -71,4 +79,4 @@ function getStatuses(n = 20) {
   } catch { return []; }
 }
 
-module.exports = { push, findById, pushDelete, getDeleted, clearDeleted, pushStatus, getStatuses };
+module.exports = { push, findById, pushDelete, getDeleted, clearDeleted, pushStatus, getStatuses, listByChat };
