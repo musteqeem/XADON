@@ -1,6 +1,6 @@
 module.exports = {
   name: 'settings',
-  alias: ['set', 'setprefix', 'mode'],
+  alias: ['set', 'xset', 'mode'],
   desc: 'Prefix and bot mode',
   usage: '.settings prefix !  |  .settings mode private',
   owner: true,
