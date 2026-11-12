@@ -47,7 +47,7 @@ module.exports = {
 
   // ── AI (.ai command) ───────────────────────────
   ai: {
-    provider: process.env.AI_PROVIDER || 'auto', // auto | groq | gemini | openai
+    provider: process.env.AI_PROVIDER || 'groq', // auto | groq | gemini | openai
     system:
       process.env.AI_SYSTEM_PROMPT ||
       'You are XADON AI, a premium WhatsApp assistant built on WaPlus. Reply clearly and briefly. Never use emojis.',
