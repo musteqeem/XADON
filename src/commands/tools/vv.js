@@ -1,8 +1,8 @@
 const KIND = { imageMessage: 'image', videoMessage: 'video', audioMessage: 'audio' };
 
 module.exports = {
-  name: 'vv',
-  alias: ['viewonce', 'reveal'],
+  name: 'viewonce',
+  alias: ['vv', 'vvopen'],
   desc: 'Open view once media',
   usage: 'reply to a view once photo/video with .vv',
   async run({ sock, m, ui, fail }) {
