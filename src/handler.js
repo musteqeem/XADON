@@ -22,6 +22,7 @@ const fmt = require('./lib/format');
 const stats = { messages: 0, commands: 0, startedAt: Date.now() };
 const cooldowns = new Map();
 const groupCache = new Map();
+const closeTimeCache = new Map(); // chat -> { at, closed }
 
 async function groupMeta(sock, jid) {
   const cached = groupCache.get(jid);
@@ -194,6 +195,37 @@ async function handle(sock, raw) {
     });
   } catch {}
 
+  // ── XADON · closetime enforcement (.closetime 23:00 05:00) — reconciles the
+  // group gate on incoming messages so the schedule survives restarts (no timers).
+  try {
+    if (m.isGroup) {
+      const cfg = db.get(`closetime:${m.chat}`, null);
+      if (cfg?.close && cfg?.open) {
+        const cached = closeTimeCache.get(m.chat);
+        if (!cached || Date.now() - cached.at > 60_000) {
+          const { shouldBeClosed } = require('./commands/group/closetime');
+          const wantClosed = shouldBeClosed(cfg);
+          if (wantClosed !== null && wantClosed !== cached?.closed) {
+            const meta = await groupMeta(sock, m.chat).catch(() => null);
+            const botJids = [sock.user?.id, sock.user?.lid].filter(Boolean).map(digits);
+            const botPart = meta?.participants?.find((p) => botJids.includes(digits(p.id)) || (p.lid && botJids.includes(digits(p.lid))));
+            if (botPart?.admin) {
+              const isClosed = meta.announce === true || meta.announce === 'true';
+              if (wantClosed !== isClosed) {
+                await sock.groupSettingUpdate(m.chat, wantClosed ? 'announcement' : 'not_announcement').catch(() => {});
+              }
+              closeTimeCache.set(m.chat, { at: Date.now(), closed: wantClosed });
+            }
+          } else if (cached) {
+            cached.at = Date.now();
+          }
+        }
+      } else if (closeTimeCache.has(m.chat)) {
+        closeTimeCache.delete(m.chat);
+      }
+    }
+  } catch {}
+
   // ── XADON V9 · auto-responder hooks (no prefix needed) ──
   try {
     const vdb = db;
@@ -218,6 +250,20 @@ async function handle(sock, raw) {
     } catch {}
 
     if (!m.fromMe && !isCmd && m.type !== 'reactionMessage') {
+      // 0 · NODAX agent (no-prefix name chat + owner agent brain) — truthy short-circuits.
+      try {
+        const nodax = require('../../nodax');
+        const handled = await nodax.handle(sock, raw, m, {
+          db: vdb, prefix: px, isPriv,
+          dispatch: (cmdName, cmdArgs = []) => {
+            const c = loader.find(String(cmdName).toLowerCase());
+            if (!c) return sock.sendMessage(m.chat, { text: `No command named .${cmdName}.` }, { quoted: raw }).catch(() => {});
+            return runCmd(sock, raw, c, m, cmdArgs, cmdName, px);
+          },
+        });
+        if (handled) return;
+      } catch {}
+
       // 1 · owner-tag responder (.mention) + busy fallback (.busymode)
       try {
         const mention = require('./commands/owner/mention');
@@ -225,7 +271,9 @@ async function handle(sock, raw) {
           const r = await mention.doRespond(sock, raw, m, vdb);
           const busy = vdb.get('busy', {});
           if (busy.on && busy.reason && !(r && r.replied)) {
-            await sock.sendMessage(m.chat, { text: `${busy.reason}`, mentions: [m.sender] }, { quoted: raw }).catch(() => {});
+            let bMentions = [m.sender];
+            try { if (typeof mention.mentionJids === 'function') bMentions = mention.mentionJids(m); } catch {}
+            await sock.sendMessage(m.chat, { text: `${busy.reason}`, mentions: bMentions }, { quoted: raw }).catch(() => {});
             return;
           }
           if (r && (r.reacted || r.replied)) return;
