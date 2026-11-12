@@ -16,7 +16,7 @@ async function withExif(webp, pack, author) {
 
 module.exports = {
   name: 'sticker',
-  alias: ['s', 'stiker'],
+  alias: ['s'],
   desc: 'Image to sticker',
   usage: 'send or reply to an image with .sticker',
   async run({ sock, m, config, fail, text }) {
