@@ -1,7 +1,7 @@
 /** XADON shorten — is.gd free shortener. */
 module.exports = {
-  name: 'shorten',
-  alias: ['short', 'tinyurl', 'link'],
+  name: 'shortlink',
+  alias: [],
   desc: 'Shorten a long link',
   usage: '.shorten <long url>',
   async run({ args, reply, ui, prefix, m }) {
