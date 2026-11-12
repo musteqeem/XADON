@@ -1,7 +1,8 @@
 /** XADON countdown — days left to a date or New Year. */
 module.exports = {
   name: 'countdown',
-  alias: ['count', 'daysleft'],
+  alias: ['countdownx'],
+  alias: [],
   desc: 'Countdown to any date',
   usage: '.countdown 2027-01-01 New Year',
   async run({ args, text, reply, ui, prefix }) {
