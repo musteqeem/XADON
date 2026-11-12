@@ -6,7 +6,7 @@
 // Usage: .godmode on | .godmode off | .godmode status
 const { savePolicy, groupPolicy, modeOf } = require('../../message-handler');
 const STACK_ON = {
-  godmode: true, antikickall: true, antidemote: true, antipromote: true,
+  godmode: true, antikickall: 'demote', antidemote: 'demote', antipromote: 'demote',
   antilink: 'warn', antibadword: 'warn', antispam: true, antiflood: true,
   antibot: 'warn', delwatch: true, antileft: true, antidelete: true,
 };
