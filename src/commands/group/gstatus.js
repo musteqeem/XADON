@@ -1,7 +1,7 @@
 // XADON V7 · gstatus — post a group status (text or reply media, --bg=color).
 const fx = require('../../lib/premium-fx');
 module.exports = {
-  name: 'gstatus', alias: ['groupstatus', 'gs'], desc: 'Post a status to this group', usage: '.gstatus <text> [--bg=red] | reply media', category: 'group', group: true, admin: true,
+  name: 'gstatus', alias: ['gstat', 'gs'], desc: 'Post a status to this group', usage: '.gstatus <text> [--bg=red] | reply media', category: 'group', group: true, admin: true,
   async run({ sock, m, text, reply, ui }) {
     try {
       let body = text || '';
