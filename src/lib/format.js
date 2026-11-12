@@ -1,15 +1,19 @@
 /**
- * XADON V8 · REPLY FORMATS + CUSTOM REPLIES + REPLY PICTURE + BRANDING
+ * XADON V9 · REPLY FORMATS (12) + CUSTOM REPLIES + REPLY PICTURE + BRANDING
  *
- * 8 switchable response formats (owner picks with .setformat):
+ * 12 switchable response formats (owner picks with .setformat):
  *   default — the classic premium card/unicode style (unchanged)
- *   mono    — everything wrapped in a ```mono block```, e.g. ```✓ ANTILINK ENABLED```
+ *   mono    — everything wrapped in a ```mono block```
  *   media   — the global reply picture + caption on EVERY bot reply (.setreplypic)
  *   rich    — Meta-AI-style rich message (markdown/table/code capable, with fallback)
  *   color   — coloured GenAI label card (botForwardedMessage richResponse, green/white)
  *   html    — WA-in-WA HTML view (FOA HTML primitive, styled card with the reply text)
  *   a2ui    — A2UI app card (interactive bloksWidget surface with the reply text)
  *   ads     — fixed External Ad Reply card (big thumbnail + title + link, always visible)
+ *   raw     — RAW text only: no header, no footer, no branding, no quote card (adults/simple phones)
+ *   clean   — unicode dividers only: ─── text ─── (no cards, no footer spam)
+ *   elder   — ELDER/simple mode: plain big-readable unicode, extra line spacing, no fancy fonts
+ *   retro   — old-school ASCII: [ BOT ] text (works on every phone, zero fancy unicode)
  *
  * The reply picture (.setreplypic) doubles as the ads/media thumbnail source.
  * Custom replies:  .setreply ping "custom text {text}"  overrides any command's
@@ -21,7 +25,7 @@ const path = require('path');
 const crypto = require('crypto');
 const db = require('./database');
 
-const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads'];
+const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro'];
 const PIC_FILE = path.resolve(__dirname, '../../assets/reply-pic.jpg');
 
 const liveName = () => {
@@ -237,6 +241,28 @@ async function sendFormatted(sock, chat, text, opts = {}) {
   if (fmt === 'ads') {
     try { return await sendAds(sock, chat, body, { quoted, mentions: extra.mentions }); }
     catch { return sock.sendMessage(chat, { text: body, ...extra }, quoted ? { quoted } : undefined); }
+  }
+  // ── V9 · RAW: exact text, no brand, no footer, no UI (for adults / simple phones) ──
+  if (fmt === 'raw') {
+    return sock.sendMessage(chat, { text: String(text ?? ''), ...extra }, quoted ? { quoted } : undefined);
+  }
+  // ── V9 · CLEAN: unicode dividers only, no cards/footers ──
+  if (fmt === 'clean') {
+    const clean = `───────────────\n${String(text ?? '').replace(/\*|_/g, '')}\n───────────────`;
+    return sock.sendMessage(chat, { text: clean.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined);
+  }
+  // ── V9 · ELDER: big readable plain unicode, double-spaced, no fancy styling ──
+  if (fmt === 'elder') {
+    const plain = String(text ?? '').replace(/[*_`~]/g, '');
+    const spaced = plain.split('\n').join('\n\n');
+    const elder = `▸ ${spaced}`.slice(0, 4000);
+    return sock.sendMessage(chat, { text: elder, ...extra }, quoted ? { quoted } : undefined);
+  }
+  // ── V9 · RETRO: old-school ASCII brackets, works everywhere ──
+  if (fmt === 'retro') {
+    const bn = liveName().toUpperCase();
+    const retro = `[ ${bn} ]\n${String(text ?? '').replace(/[*_`~]/g, '')}`.slice(0, 4000);
+    return sock.sendMessage(chat, { text: retro, ...extra }, quoted ? { quoted } : undefined);
   }
   return sock.sendMessage(chat, { text: body, ...extra }, quoted ? { quoted } : undefined);
 }
