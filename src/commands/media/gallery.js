@@ -1,19 +1,12 @@
-// XADON V7 · gallery — art gallery carousel — swipeable image carousel (albumpic engine).
-const fx = require('../../lib/premium-fx');
+// Picked from WHATSAPP INVESTIGATION: albumpic.js — swipeable image carousel (uses premium-fx)
 module.exports = {
-  name: 'gallery', alias: ['artgallery', 'arts'], desc: 'Art gallery carousel', usage: '.gallery 5', category: 'media',
-  async run({ sock, m, args, text, reply, ui, prefix }) {
+  name: 'gallery', alias: ['albumpic', 'photostrip'], desc: 'Swipeable image carousel (10 pics)', usage: '.gallery cats | .gallery', category: 'media',
+  async run({ sock, m, text, reply, ui }) {
+    const fx = require('../../lib/premium-fx');
+    const q = (text || 'beautiful landscape').slice(0, 80);
     try {
-      const n = Math.max(2, Math.min(10, parseInt(args[0], 10) || 5));
-      const items = [];
-      for (let i = 0; i < n; i++) items.push({ url: 'https://picsum.photos/600/400?random=' + (Date.now() % 100000 + i * 7), title: 'Artwork ' + (i + 1), body: (text.replace(/^\d+\s*/, '') || 'Gallery picks').slice(0, 120), footer: require('../../lib/botstate').botName(), buttons: [{ text: 'Menu', id: prefix + 'menu' }, { text: 'Ping', id: prefix + 'ping' }] });
-      await fx.carousel(sock, m.chat, items, { title: '*GALLERY*\nSwipe to view', footer: require('../../lib/botstate').botName(), quoted: m.raw });
-      await sock.sendMessage(m.chat, { react: { text: '\u2705', key: m.key } }).catch(() => {});
-    } catch (e) {
-      // fallback: plain images (works on every Baileys runtime)
-      try {
-        for (let i = 0; i < 3; i++) await sock.sendMessage(m.chat, { image: { url: 'https://picsum.photos/600/400?random=' + (Date.now() % 100000 + i) }, caption: 'Art ' + (i + 1) }, { quoted: m.raw });
-      } catch { return reply(ui.notice('error', 'Carousel failed', String(e.message || e).slice(0, 200))); }
-    }
+      const items = Array.from({ length: 5 }, (_, i) => ({ url: `https://picsum.photos/seed/${encodeURIComponent(q)}-${i}/600/400`, title: `${q} ${i + 1}`, body: `Photo ${i + 1} · ${q}` }));
+      await fx.carousel(sock, m.chat, items, { title: `Gallery: ${q}`, footer: ui.footer(), quoted: m.raw });
+    } catch { return reply(ui.notice('error', 'Gallery failed', 'Image service is busy. Try again.')); }
   },
 };
