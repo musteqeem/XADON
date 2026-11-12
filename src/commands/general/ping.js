@@ -3,8 +3,8 @@ const fmt = require('../../lib/format');
 const grade = (ms) => (ms < 150 ? 'excellent' : ms < 400 ? 'stable' : ms < 900 ? 'average' : 'slow');
 
 module.exports = {
-  name: 'ping',
-  alias: ['speed', 'p'],
+  name: 'pingx',
+  alias: ['speedx', 'p2'],
   desc: 'Check bot speed',
   async run({ sock, m, ui, prefix }) {
     const { fonts } = ui;
