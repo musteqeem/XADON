@@ -4,7 +4,7 @@
 const botstate = require('../../lib/botstate');
 
 module.exports = {
-  name: 'setbotname', alias: ['setname-bot', 'botname', 'setname'], desc: 'Change bot display name everywhere (instant, no restart)', usage: '.setbotname META AI', category: 'owner', owner: true,
+  name: 'setbotname', alias: ['setname-bot', 'botname', 'botrename'], desc: 'Change bot display name everywhere (instant, no restart)', usage: '.setbotname META AI', category: 'owner', owner: true,
   async run({ text, reply, ui }) {
     const name = (text || '').trim().replace(/\s+/g, ' ').slice(0, 30);
     if (!name) return reply(ui.notice('info', 'Set bot name', `Current: ${botstate.botName()}\nUsage: .setbotname META AI`));
