@@ -1,6 +1,6 @@
 module.exports = {
   name: 'fancy',
-  alias: ['font', 'style'],
+  alias: ['fancytxt', 'style'],
   desc: 'Stylish unicode text',
   usage: '.fancy <text>',
   async run({ text, reply, ui, prefix, m }) {
