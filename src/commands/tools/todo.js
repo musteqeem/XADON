@@ -1,7 +1,8 @@
 /** XADON todo list — per user, with done/undone ticks. */
 module.exports = {
   name: 'todo',
-  alias: ['todos', 'tasks', 'task'],
+  alias: ['todolist', 'todos'],
+  alias: [],
   desc: 'Your personal todo list',
   usage: '.todo add call mum  ·  .todo list  ·  .todo done 1  ·  .todo clear',
   async run({ args, reply, ui, prefix, m, db }) {
