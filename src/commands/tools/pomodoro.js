@@ -1,7 +1,7 @@
 /** XADON V9 · pomodoro — focus timer. .pomodoro 25 maths (pings you when time is up). */
 module.exports = {
   name: 'pomodoro',
-  alias: ['focus', 'ptimer', 'studytimer'],
+  alias: ['pomo', 'ptimer', 'studytimer'],
   desc: 'Focus timer with a reminder',
   usage: '.pomodoro <minutes> [label]',
   category: 'tools',
