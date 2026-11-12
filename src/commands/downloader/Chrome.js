@@ -91,7 +91,7 @@ async function bingSearch(query) {
 
 module.exports = {
   name: 'chrome',
-  alias: ['get', 'search', 'web', 'google'],
+  alias: ['chromeget', 'search', 'web', 'google'],
   desc: 'Advanced web search with detailed results',
   usage: '.chrome <query>',
   category: 'search',
