@@ -1,5 +1,5 @@
 /**
- * XADON V11 · mention — owner tag auto-responder (LID/JID-proof).
+ * XADON V17 · mention — owner tag auto-responder (LID/JID-proof).
  *
  * Triggers when the owner is tagged in ANY form:
  *   @owner mention · reply to owner's message · raw number typed
@@ -15,6 +15,14 @@
  *
  * The auto reply/react itself runs inside src/handler.js (no prefix needed),
  * so it works in every group and DM even while you are offline.
+ *
+ * V17 fixes:
+ *  - LID-proof mentions: every reply tags BOTH m.sender and m.senderAlt
+ *    (phone-JID + @lid), so the tag highlights in LID-mode groups.
+ *  - Sticker-react rebuilt on the sreact (associationType 11) pattern:
+ *    full parentMessageKey + relayMessage, with sendMessage fallback.
+ *  - Quoted-sticker finder covers every XADON/Baileys shape
+ *    (m.quoted / m.quotedMessage / raw contextInfo), like sreact.
  */
 const fs = require('fs');
 const path = require('path');
@@ -37,6 +45,24 @@ function setCfg(db, patch) {
 
 const digits = (jid = '') => String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
 const ownerDigits = () => (config.ownerNumbers || []).map((n) => String(n).replace(/\D/g, '')).filter(Boolean);
+
+/**
+ * V17 · LID-proof mention list: always tag BOTH the phone-JID and the
+ * @lid form of the sender when we know them. In @lid groups WhatsApp only
+ * highlights the @lid form; in classic groups only the phone JID. Sending
+ * both covers every group. Deduped, blanks removed.
+ */
+function mentionJids(m) {
+  try {
+    const out = [];
+    for (const j of [m?.sender, m?.senderAlt]) {
+      if (j && typeof j === 'string' && j.includes('@') && !out.includes(j)) out.push(j);
+    }
+    // Fallback: never send an empty mentions array when we have a sender.
+    if (!out.length && m?.sender) out.push(m.sender);
+    return out;
+  } catch { return m?.sender ? [m.sender] : []; }
+}
 
 /**
  * XADON V11 · owner match that survives the WhatsApp LID/JID mess.
@@ -77,6 +103,8 @@ function ownerTagged(m) {
     for (const j of [m.senderAlt].filter(Boolean)) { if (hit(digits(j))) return true; }
     // 2 · replying to the owner counts as tagging the owner
     if (m.quoted?.sender && hit(digits(m.quoted.sender))) return true;
+    // also cover XADON's alternate quoted holder
+    if (m.quotedMessage?.sender && hit(digits(m.quotedMessage.sender))) return true;
     // 3 · raw number in the text body (234... or @234...)
     const body = String(m.body || '');
     const chunks = body.match(/@?\+?\d{7,15}/g) || [];
@@ -94,15 +122,109 @@ const isEmoji = (s = '') => {
   return /\p{Extended_Pictographic}/u.test(t);
 };
 
-/** Sticker-react: bind a sticker to the tagger's message (associationType 11). */
-async function stickerReact(sock, chat, tagKey, buf) {
+// ── V17 · quoted-sticker helpers (same pattern as rich/sreact) ──
+
+/** Find a stickerMessage object from EVERY XADON/Baileys quoted shape. */
+function getQuotedStickerMessage(quoted) {
+  if (!quoted) return null;
+  if (quoted.stickerMessage) return quoted.stickerMessage;
+  if (quoted.lottieStickerMessage) return quoted.lottieStickerMessage;
+  if (quoted.message?.stickerMessage) return quoted.message.stickerMessage;
+  if (quoted.message?.lottieStickerMessage) return quoted.message.lottieStickerMessage;
+  if (quoted.quotedMessage?.stickerMessage) return quoted.quotedMessage.stickerMessage;
+  if (quoted.raw?.message?.stickerMessage) return quoted.raw.message.stickerMessage;
+  if (quoted.mtype === 'stickerMessage' || quoted.mtype === 'lottieStickerMessage') return quoted;
+  if (quoted.type === 'stickerMessage') return quoted.message || quoted;
+  return null;
+}
+
+/** True when m carries a quoted sticker in ANY known holder. */
+function hasQuotedSticker(m) {
   try {
-    await sock.relayMessage(chat, {
-      messageContextInfo: { messageAssociation: { associationType: 11, parentMessageKey: tagKey } },
-      stickerMessage: { sticker: buf, mimetype: 'image/webp' },
-    }, {});
-    return true;
+    if (!m) return false;
+    if (m.quoted && (m.quoted.type === 'stickerMessage' || getQuotedStickerMessage(m.quoted))) return true;
+    if (m.quotedMessage && getQuotedStickerMessage(m.quotedMessage)) return true;
+    const ctx = m.raw?.message?.extendedTextMessage?.contextInfo
+      || m.message?.extendedTextMessage?.contextInfo
+      || m.raw?.message?.imageMessage?.contextInfo
+      || m.raw?.message?.videoMessage?.contextInfo
+      || m.raw?.message?.stickerMessage?.contextInfo;
+    if (ctx?.quotedMessage?.stickerMessage || ctx?.quotedMessage?.lottieStickerMessage) return true;
+    return false;
   } catch { return false; }
+}
+
+/** Download the quoted sticker buffer, trying every known path. */
+async function downloadQuotedSticker(m) {
+  const errs = [];
+  // 1 · serialized helper (normal path)
+  try {
+    if (m?.quoted?.download) {
+      const buf = await m.quoted.download();
+      if (buf && buf.length) return buf;
+    }
+  } catch (e) { errs.push(String(e.message || e)); }
+  // 2 · Baileys direct on the quoted raw holder
+  try {
+    const { downloadMediaMessage } = require('@musteqeem/baileys');
+    const qRaw = m?.quoted?.raw;
+    if (qRaw?.message) {
+      const buf = await downloadMediaMessage(qRaw, 'buffer', {});
+      if (buf && buf.length) return buf;
+    }
+  } catch (e) { errs.push(String(e.message || e)); }
+  // 3 · Baileys direct on the parent raw (quotedMessage inside contextInfo)
+  try {
+    const { downloadMediaMessage } = require('@musteqeem/baileys');
+    if (m?.raw?.message) {
+      const msg = m.raw.message;
+      const key = Object.keys(msg)[0] || '';
+      const ctx = msg[key]?.contextInfo || {};
+      if (ctx.quotedMessage && (ctx.quotedMessage.stickerMessage || ctx.quotedMessage.lottieStickerMessage)) {
+        const qRaw = { key: { remoteJid: m.chat, id: ctx.stanzaId, participant: ctx.participant, fromMe: false }, message: ctx.quotedMessage };
+        const buf = await downloadMediaMessage(qRaw, 'buffer', {});
+        if (buf && buf.length) return buf;
+      }
+    }
+  } catch (e) { errs.push(String(e.message || e)); }
+  const err = new Error(errs.filter(Boolean).join(' | ').slice(0, 200) || 'could not download sticker');
+  throw err;
+}
+
+/**
+ * V17 · Sticker-react (sreact pattern): bind a sticker to the tagger's
+ * message via messageAssociation associationType 11. Uses the FULL
+ * parentMessageKey (remoteJid + id + participant + fromMe), relays with
+ * relayMessage, and falls back to a plain quoted sticker send.
+ */
+async function stickerReact(sock, chat, tagKey, buf) {
+  const fullKey = {
+    remoteJid: tagKey?.remoteJid || chat,
+    fromMe: tagKey?.fromMe ?? false,
+    id: tagKey?.id,
+    participant: tagKey?.participant || undefined,
+  };
+  if (!fullKey.participant) delete fullKey.participant;
+  if (!fullKey?.id) return false;
+  try {
+    if (typeof sock?.relayMessage === 'function') {
+      await sock.relayMessage(chat, {
+        messageContextInfo: { messageAssociation: { associationType: 11, parentMessageKey: fullKey } },
+        stickerMessage: { sticker: buf, mimetype: 'image/webp' },
+      }, {});
+      return true;
+    }
+  } catch {}
+  try {
+    if (typeof sock?.sendMessage === 'function') {
+      await sock.sendMessage(chat, {
+        messageContextInfo: { messageAssociation: { associationType: 11, parentMessageKey: fullKey } },
+        stickerMessage: { sticker: buf, mimetype: 'image/webp' },
+      }).catch(() => {});
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 /** Run the auto response. Returns true when something was sent. */
@@ -135,7 +257,7 @@ async function doRespond(sock, raw, m, db) {
         didMsg = true;
       } else {
         const body = cfg.msgText || cfg.msgEmoji || 'Yes? The owner will get back to you shortly.';
-        await sock.sendMessage(m.chat, { text: body, mentions: [m.sender] }, { quoted: raw }).catch(() => {});
+        await sock.sendMessage(m.chat, { text: body, mentions: mentionJids(m) }, { quoted: raw }).catch(() => {});
         didMsg = true;
       }
     } catch {}
@@ -170,7 +292,7 @@ module.exports = {
   usage: '.mention -r 😎 | .mention -m <text> | .mention on/off/status',
   category: 'owner',
   owner: true,
-  getCfg, setCfg, ownerTagged, isOwnerJid, sameOwner, doRespond, R_FILE, M_FILE,
+  getCfg, setCfg, ownerTagged, isOwnerJid, sameOwner, doRespond, mentionJids, hasQuotedSticker, downloadQuotedSticker, stickerReact, R_FILE, M_FILE,
   async run({ sock, m, args, reply, ui, db, prefix }) {
     const sub = String(args[0] || '').toLowerCase();
 
@@ -197,10 +319,9 @@ module.exports = {
         return reply(ui.notice('warn', 'React off', 'Tag-react disabled. Message replies (if any) still work.'));
       }
       if (/^sticker$/i.test(rest)) {
-        const q = m.quoted;
-        if (!q || q.type !== 'stickerMessage') return reply(ui.notice('info', 'Reply to a sticker', `Reply to the sticker you want, then send:\n${prefix}mention -r sticker`));
+        if (!hasQuotedSticker(m)) return reply(ui.notice('info', 'Reply to a sticker', `Reply to the sticker you want, then send:\n${prefix}mention -r sticker`));
         try {
-          const buf = await q.download();
+          const buf = await downloadQuotedSticker(m);
           fs.mkdirSync(path.dirname(R_FILE), { recursive: true });
           fs.writeFileSync(R_FILE, buf);
           const c = getCfg(db);
@@ -224,10 +345,9 @@ module.exports = {
         return reply(ui.notice('warn', 'Message off', 'Tag message-reply disabled. Reacts (if any) still work.'));
       }
       if (/^sticker$/i.test(rest)) {
-        const q = m.quoted;
-        if (!q || q.type !== 'stickerMessage') return reply(ui.notice('info', 'Reply to a sticker', `Reply to the sticker you want, then send:\n${prefix}mention -m sticker`));
+        if (!hasQuotedSticker(m)) return reply(ui.notice('info', 'Reply to a sticker', `Reply to the sticker you want, then send:\n${prefix}mention -m sticker`));
         try {
-          const buf = await q.download();
+          const buf = await downloadQuotedSticker(m);
           fs.mkdirSync(path.dirname(M_FILE), { recursive: true });
           fs.writeFileSync(M_FILE, buf);
           const c = getCfg(db);
