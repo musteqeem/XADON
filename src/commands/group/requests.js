@@ -1,7 +1,7 @@
 // XADON AI · requests — pending group join requests (Baileys groupRequestParticipantsList).
 module.exports = {
   name: 'requests',
-  alias: ['joinreq', 'pendings'],
+  alias: ['reqlist', 'pendings'],
   desc: 'List pending join requests',
   usage: '.requests',
   group: true, admin: true, category: 'group',
