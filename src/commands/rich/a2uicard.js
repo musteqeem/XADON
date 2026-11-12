@@ -7,7 +7,7 @@ function fmtSize(b) { const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0, v = b;
 function fmtDur(ms) { const t = Math.floor(ms / 1000), d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60), s = t % 60; return [...(d ? [`${d}d`] : []), ...(h ? [`${h}h`] : []), ...(m ? [`${m}m`] : []), `${s}s`].join(' '); }
 function net() { try { const ni = os.networkInterfaces(); const ips = []; for (const a of Object.values(ni).flat()) { if (a && !a.internal) ips.push(a.address); } return { count: Object.keys(ni).length, primary: ips.find((x) => x.includes('.')) || ips[0] || '-' }; } catch { return { count: 0, primary: '-' }; } }
 module.exports = {
-  name: 'a2uicard', alias: ['a2ui', 'syscard', 'pingx'], desc: 'Server inspector app card', usage: '.a2uicard', category: 'rich',
+  name: 'a2uicard', alias: ['a2ui', 'syscard', 'inspectcard'], desc: 'Server inspector app card', usage: '.a2uicard', category: 'rich',
   async run({ sock, m, reply, ui }) {
     const start = Date.now();
     await sock.sendMessage(m.chat, { react: { text: '⚙️', key: m.key } }).catch(() => {});
