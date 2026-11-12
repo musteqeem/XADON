@@ -11,9 +11,9 @@ const CATEGORY_ICONS_MAP = {
   admin: '⚜️', ai: '🧠', anime: '⧬', anomaly: '⧭', anti: '🛡️', art: '🎨', asset: '🗄️',
   audio: '🎧', bot: '🤖', community: '🏘️', converter: '⧮', core: '֎', 'dev-centre': '🌚',
   documents: '📜', downloader: '📥', economy: '💎', emote: '✨', engine: '⚙️', fetcher: '⟁',
-  fun: '🔥', fun2: '🎲', games: '🎮', general: '📜', group: '👥', group2: '👥',
-  'hype-fun': '🔥', 'media-modifier': '🎬', media: '🎬', owner: '👑', owner2: '👑',
-  privacy: '🔒', rando: '🎲', rich: '💠', search: '🔍', tools: '🧰', tools2: '🧰',
+  fun: '🔥', games: '🎮', general: '📜', group: '👥',
+  'hype-fun': '🔥', 'media-modifier': '🎬', media: '🎬', owner: '👑',
+  privacy: '🔒', rando: '🎲', rich: '💠', search: '🔍', tools: '🧰',
   trivia: '❓', utility: '⧉', voice: '🎙️', 'whatsapp business': '💼'
 };
 const getCategoryIcon = (c) => CATEGORY_ICONS_MAP[String(c || '').toLowerCase()] || '⧫';
