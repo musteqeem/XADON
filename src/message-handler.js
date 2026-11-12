@@ -31,6 +31,34 @@ const isForeign = (text = '') => /[\u0600-\u06FF\u0750-\u077F\u4E00-\u9FFF\u3040
 const hasPhone = (text = '') => /(?:\+\d[\d\s\-.()]{6,}\d|\b\d{3}[\s\-.]?\d{3}[\s\-.]?\d{4,}\b|\b\d{9,}\b)/.test(text || '');
 const hasEmail = (text = '') => /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text || '');
 const isShortLink = (text = '') => /(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd|cutt\.ly|rebrand\.ly|tiny\.cc|ow\.ly|buff\.ly|adf\.ly|shorte\.st|linktr\.ee|shorturl\.at)[^\s]*/i.test(text || '');
+// V13 · bare-domain links with NO http/www (google.com, site.net, shop.xyz …) + "dot" evasions.
+// Emails are stripped first so contact@company.com is NOT treated as a link.
+const BARE_TLDS = 'com|net|org|io|me|gg|ly|be|tv|co|app|xyz|site|online|store|shop|biz|info|dev|link|click|live|fun|top|win|pro|vip|art|blog|news|tech|ai|ng|us|uk|de|fr|ru|in|br|za|gh|ke|to|cc|ws|fm';
+const stripEmails = (t = '') => String(t).replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, ' ');
+const isBareLink = (text = '') => {
+  const t = stripEmails(text);
+  if (!t || isLink(t)) return false;
+  if (new RegExp(`(?:^|[\\s(>"'\u201c])((?:[a-z0-9-]{2,}\\.)+(?:${BARE_TLDS}))(?!\\.[a-z])(?:\\/[^\\s]*)?`, 'i').test(t)) return true;
+  // spaced evasions: "example dot com", "example . com", "example,com"
+  if (new RegExp(`\\b[a-z0-9-]{2,}\\s*(?:\\.|,|\\bdot\\b|\\bd0t\\b)\\s*(?:${BARE_TLDS})\\b`, 'i').test(t)) return true;
+  return false;
+};
+const isAnyLink = (text = '') => isLink(text) || isBareLink(text);
+// V13 · poll question + options as plain text (votes carry no text and never match).
+const pollText = (raw) => {
+  try {
+    const msg = raw?.message || {};
+    const inner = msg.pollCreationMessage || msg.pollCreationMessageV2 || msg.pollCreationMessageV3 || null;
+    if (!inner) return '';
+    const out = [];
+    if (inner.name) out.push(inner.name);
+    for (const o of inner.options || []) {
+      if (typeof o === 'string') out.push(o);
+      else if (o) out.push(o.optionName || o.name || '');
+    }
+    return out.filter(Boolean).join('\n');
+  } catch { return ''; }
+};
 const emojiCount = (text = '') => (String(text).match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu) || []).length;
 const hasBug = (text = '') => {
   const t = String(text || '');
@@ -192,7 +220,8 @@ function modeOf(value) {
   const v = String(value ?? '').toLowerCase().trim();
   if (['warn', 'warns', 'warning', 'warnings'].includes(v)) return 'warn';
   if (['kick', 'remove', 'ban'].includes(v)) return 'kick';
-  if (['on', 'enable', 'yes', 'delete'].includes(v)) return 'on';
+  if (['demote', 'deduct', 'strip', 'degrade', 'unadmin'].includes(v)) return 'demote';
+  if (['on', 'enable', 'yes', 'delete', 'revert'].includes(v)) return 'on';
   return 'off';
 }
 const policyMode = (policy, key) => modeOf(policy?.[key]);
@@ -359,6 +388,25 @@ async function handleMessage(sock, raw) {
     } catch {}
   }
   const isGif = m.type === 'videoMessage' && !!(m.message?.videoMessage?.gifPlayback);
+  // V13 · per-user mutes (.muteuser / .mutesticker / .muteemoji) — delete + swallow
+  // before every other rule, so muted members cannot talk, sticker-spam, or emoji-spam.
+  // (Admins and owner-privileged senders are always exempt.)
+  try {
+    const muteNum = digit(m.sender);
+    const isMutedKind = (kind) => { try { return (db.get(`muted:${kind}:${jid}`, []) || []).includes(muteNum); } catch { return false; } };
+    const muteHit = isMutedKind('user')
+      || (isMutedKind('sticker') && m.type === 'stickerMessage')
+      || (isMutedKind('emoji') && emojiCount(m.body) >= 1);
+    if (muteHit) {
+      const privs = require('./lib/privs');
+      const exempt = privs.isSudoPriv(db, config, muteNum) || await participantAdmin(sock, jid, m.sender);
+      if (!exempt) {
+        const botAdmin = await participantAdmin(sock, jid, sock.user?.id || '');
+        if (botAdmin) await sock.sendMessage(jid, { delete: raw.key }).catch(() => {});
+        return true;
+      }
+    }
+  } catch {}
   const isCallLog = /callLog|callLogMessage|callCreation/i.test(m.type || '') || /callLog/i.test(rawStr);
   const isChannelFwd = !!(rawContext(raw).ctx?.forwardedNewsletterMessageInfo) || /forwardedNewsletterMessageInfo/i.test(rawStr);
   const isEvent = /eventMessage|scheduledCallCreation|eventCreation/i.test(m.type || '') || /scheduledCallCreationMessage|eventMessage/i.test(rawStr);
@@ -369,14 +417,16 @@ async function handleMessage(sock, raw) {
   const isHidetag = (m.mentions || []).length >= 4 && !(m.body || '').includes('@');
   const isGroupStatusMsg = /groupStatusMessage|groupStatus/i.test(rawStr);
   const isStatusReply = /status@broadcast/i.test(rawStr) && !!m.quoted;
+  // V13 · poll question + options (so .antilink/.antiinvite catch links hidden in polls)
+  const pollTxt = pollText(raw);
   const ugBlob = `${m.body || ''}`;
   const _px = String(db.get('prefix', config.prefix) || '.');
   const isCmdText = (m.body || '').startsWith(_px) && /[a-z]/i.test(String(m.body || '').slice(_px.length, _px.length + 1));
 
   // [active?, reason, ruleKey] — every rule carries its warn/kick mode.
   const rules = [
-    [modeActive(policy, 'antilink') && isLink(m.body), XADON_AN('Link removed: links are not allowed in this group'), 'antilink'],
-    [modeActive(policy, 'antiinvite') && isInvite(m.body), XADON_AN('Invite removed: group invites are disabled here'), 'antiinvite'],
+    [modeActive(policy, 'antilink') && (isAnyLink(m.body) || isAnyLink(pollTxt)), XADON_AN('Link removed: links are not allowed in this group'), 'antilink'],
+    [modeActive(policy, 'antiinvite') && (isInvite(m.body) || isInvite(pollTxt)), XADON_AN('Invite removed: group invites are disabled here'), 'antiinvite'],
     [modeActive(policy, 'antibadword') && hasBadWord(m.body), XADON_AN('Message removed: watch your language'), 'antibadword'],
     [modeActive(policy, 'antiforeign') && isForeign(m.body), XADON_AN('Message removed: foreign scripts are disabled here'), 'antiforeign'],
     [modeActive(policy, 'antiflood') && (m.body || '').length > 1200, XADON_AN('Message removed: flooding is not allowed'), 'antiflood'],
@@ -413,7 +463,7 @@ async function handleMessage(sock, raw) {
     [modeActive(policy, 'antishort') && isShortLink(m.body), XADON_AN('Message removed: shortened/masked links are not allowed'), 'antishort'],
     [modeActive(policy, 'antiduplicate') && dupSpam(jid, m.sender, m.body), XADON_AN('Message removed: sending the same message repeatedly is not allowed'), 'antiduplicate'],
     [modeActive(policy, 'anticaps') && capsShout(m.body), XADON_AN('Message removed: excessive CAPS shouting is not allowed'), 'anticaps'],
-    [modeActive(policy, 'antijoin') && isNewcomer(jid, m.sender) && (isLink(m.body) || m.isMedia), XADON_AN('Message removed: new members cannot send links/media yet'), 'antijoin'],
+    [modeActive(policy, 'antijoin') && isNewcomer(jid, m.sender) && (isAnyLink(m.body) || m.isMedia), XADON_AN('Message removed: new members cannot send links/media yet'), 'antijoin'],
     // ── V8 · 10 NEWER antis ──
     [modeActive(policy, 'anticode') && isCodeBlock(m.body), XADON_AN('Code removed: code blocks are not allowed here'), 'anticode'],
     [modeActive(policy, 'antifont') && hasFancyFont(m.body), XADON_AN('Message removed: fancy/styled fonts are not allowed here'), 'antifont'],
@@ -443,7 +493,7 @@ async function handleMessage(sock, raw) {
   // ── ANTIUG · the ultimate guard: one switch that covers everything ──
   if (modeActive(policy, 'antiug')) {
     const ugHit =
-      isLink(ugBlob) || isInvite(ugBlob) || hasBadWord(ugBlob) || isForeign(ugBlob) ||
+      isAnyLink(ugBlob) || isInvite(ugBlob) || hasBadWord(ugBlob) || isForeign(ugBlob) ||
       hasPhone(ugBlob) || hasEmail(ugBlob) || isShortLink(ugBlob) || hasBug(ugBlob) ||
       capsShout(ugBlob) || emojiCount(ugBlob) >= 8 || forwarded ||
       isCodeBlock(ugBlob) || hasFancyFont(ugBlob) || isCloudLink(ugBlob) || isApkLink(ugBlob) ||
@@ -489,21 +539,48 @@ async function handleParticipantsUpdate(sock, update) {
       return !!meta?.participants?.find((p) => [p.id, p.jid, p.lid, p.phoneNumber].filter(Boolean).some((v) => digit(v) === botNum || digit(v) === digit(sock.user?.id || '')))?.admin;
     } catch { return false; }
   };
-  // V11 · revert an unauthorized promote/demote, then warn.
+  // V11 · revert an unauthorized promote/demote, then punish the author per mode.
+  // Modes: on = revert only · demote = revert + demote author · kick = revert + kick author · warn = revert + warn (3 warns = kick).
   const revertRole = async (victim, toAdmin, kind) => {
     try {
       if (!await botIsAdmin()) {
         await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: @${digit(author)} changed @${digit(victim)} but I am not admin so I cannot revert it.`), mentions: [author, victim].filter(Boolean) }).catch(() => {});
-        return;
+        return false;
       }
       await sock.groupParticipantsUpdate(update.id, [victim], toAdmin ? 'promote' : 'demote').catch(() => {});
-      await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: unauthorized ${kind} by @${digit(author)} reverted (@${digit(victim)} restored).`), mentions: [author, victim].filter(Boolean) }).catch(() => {});
-      try {
-        if (db.get(`kicklog:${update.id}`, false)) {
-          await sock.sendMessage(ownerDmJid(), { text: `Anti-${kind} @ ${(policy.groupName || update.id)}: ${authorNum} tried to ${kind} ${digit(victim)} — reverted.` }).catch(() => {});
+      return true;
+    } catch { return false; }
+  };
+  // Punish the rogue admin AFTER the victim was restored. Returns a short label.
+  const punishAuthor = async (rule, mode, kind) => {
+    try {
+      if (mode === 'on' || mode === 'off') return 'reverted';
+      if (!await botIsAdmin()) {
+        await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: @${digit(author)} broke the rule but I am not admin so I cannot punish them — make me admin!`), mentions: [author].filter(Boolean) }).catch(() => {});
+        return 'no-punish (not admin)';
+      }
+      if (mode === 'demote') {
+        await sock.groupParticipantsUpdate(update.id, [author], 'demote').catch(() => {});
+        await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: unauthorized ${kind} by @${digit(author)} reverted — and @${digit(author)} was demoted for it.`), mentions: [author].filter(Boolean) }).catch(() => {});
+        return 'demoted';
+      }
+      if (mode === 'kick') {
+        await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: unauthorized ${kind} by @${digit(author)} reverted — removing @${digit(author)} now.`), mentions: [author].filter(Boolean) }).catch(() => {});
+        await sock.groupParticipantsUpdate(update.id, [author], 'remove').catch(() => {});
+        return 'kicked';
+      }
+      if (mode === 'warn') {
+        const n = await pushAntiWarn(update.id, author, rule, `unauthorized ${kind}`);
+        if (n >= 3) {
+          await sock.groupParticipantsUpdate(update.id, [author], 'remove').catch(() => {});
+          await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: @${digit(author)} hit 3 warns — removed.`), mentions: [author].filter(Boolean) }).catch(() => {});
+          return 'warned x3 (kicked)';
         }
-      } catch {}
-    } catch {}
+        await sock.sendMessage(update.id, { text: XADON_AN(`Anti-${kind}: unauthorized ${kind} by @${digit(author)} reverted — warn ${n}/3.`), mentions: [author].filter(Boolean) }).catch(() => {});
+        return `warned (${n}/3)`;
+      }
+      return 'reverted';
+    } catch { return 'reverted'; }
   };
   for (const participant of update.participants) {
     const jid = typeof participant === 'string' ? participant : participant.id || participant.jid;
@@ -554,7 +631,8 @@ async function handleParticipantsUpdate(sock, update) {
       // V11 · left-vs-kicked tracking: kicked when someone else did the removal.
       const wasKicked = !!(author && digit(author) !== digit(jid));
       try { pushMemberLog(update.id, wasKicked ? 'kicked' : 'left', { jid, by: author || 'unknown', name: '' }); } catch {}
-      // V11 · ANTIKICKALL: an admin mass-removing members gets demoted fast.
+      // V11 · ANTIKICKALL: a rogue admin mass-removing members gets punished fast.
+      // Modes: on/demote = demote the rogue · kick = kick the rogue · warn = warn only.
       try {
         if (wasKicked && modeActive(policy, 'antikickall') && !authorPriv) {
           const wk = `${update.id}:${authorNum || digit(author)}`;
@@ -566,13 +644,23 @@ async function handleParticipantsUpdate(sock, update) {
           if (kickWatch.size > 1000) for (const k of [...kickWatch.keys()].slice(0, 200)) kickWatch.delete(k);
           if (arr.length >= limit) {
             kickWatch.delete(wk);
+            const kmode = modeOf(policy.antikickall); // 'on' (legacy) behaves as demote
+            const punish = (kmode === 'kick') ? 'kick' : (kmode === 'warn' ? 'warn' : 'demote');
             if (await botIsAdmin()) {
-              await sock.groupParticipantsUpdate(update.id, [author], 'demote').catch(() => {});
-              await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} was demoted for mass-removing members (${arr.length} in 2 min).`), mentions: [author] }).catch(() => {});
+              if (punish === 'kick') {
+                await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} mass-removed members (${arr.length} in 2 min) — removing them now.`), mentions: [author] }).catch(() => {});
+                await sock.groupParticipantsUpdate(update.id, [author], 'remove').catch(() => {});
+              } else if (punish === 'warn') {
+                const n = await pushAntiWarn(update.id, author, 'antikickall', `mass-removing members (${arr.length} in 2 min)`);
+                await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} mass-removed members (${arr.length} in 2 min) — warn ${n}/3.`), mentions: [author] }).catch(() => {});
+              } else {
+                await sock.groupParticipantsUpdate(update.id, [author], 'demote').catch(() => {});
+                await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} was demoted for mass-removing members (${arr.length} in 2 min).`), mentions: [author] }).catch(() => {});
+              }
             } else {
               await sock.sendMessage(update.id, { text: XADON_AN(`Anti-kickall: @${digit(author)} is mass-removing members but I am not admin — make me admin!`), mentions: [author] }).catch(() => {});
             }
-            try { await sock.sendMessage(ownerDmJid(), { text: `ANTIKICKALL @ ${policy.groupName || update.id}: ${authorNum} removed ${arr.length} members in 2 min — demoted.` }).catch(() => {}); } catch {}
+            try { await sock.sendMessage(ownerDmJid(), { text: `ANTIKICKALL @ ${policy.groupName || update.id}: ${authorNum} removed ${arr.length} members in 2 min — ${punish}ed.` }).catch(() => {}); } catch {}
           }
         }
       } catch {}
@@ -592,12 +680,37 @@ async function handleParticipantsUpdate(sock, update) {
         await sock.sendMessage(update.id, { text: `👋 @${digit(jid)} left *${policy.groupName || 'the group'}*. We wish them well.`, mentions: [jid] }).catch(() => {});
       }
     }
-    // V11 · ANTIDEMOTE / ANTIPROMOTE: revert unauthorized role changes.
+    // V11 · ANTIDEMOTE / ANTIPROMOTE: revert unauthorized role changes, then punish the rogue admin per mode.
+    // Modes: on = revert only · demote = revert + demote author · kick = revert + kick author · warn = revert + warn.
     if ((update.action === 'demote' || update.action === 'promote') && author && digit(author) !== digit(jid)) {
       try {
-        if (update.action === 'demote' && modeActive(policy, 'antidemote') && !authorPriv) await revertRole(jid, true, 'demote');
-        if (update.action === 'promote' && modeActive(policy, 'antipromote') && !authorPriv) await revertRole(jid, false, 'promote');
-        if (db.get(`kicklog:${update.id}`, false)) {
+        if (update.action === 'demote' && modeActive(policy, 'antidemote') && !authorPriv) {
+          const dmode = modeOf(policy.antidemote);
+          const ok = await revertRole(jid, true, 'demote');
+          let result = 'reverted';
+          if (ok) result = await punishAuthor('antidemote', dmode, 'demote');
+          else await sock.sendMessage(update.id, { text: XADON_AN(`Anti-demote: unauthorized demote by @${digit(author)} — victim @${digit(jid)} NOT restored (make me admin).`), mentions: [author, jid].filter(Boolean) }).catch(() => {});
+          if (dmode === 'on' && ok) await sock.sendMessage(update.id, { text: XADON_AN(`Anti-demote: unauthorized demote by @${digit(author)} reverted (@${digit(jid)} restored). Tip: .antidemote demote or .antidemote kick to also punish the rogue admin.`), mentions: [author, jid].filter(Boolean) }).catch(() => {});
+          try {
+            if (db.get(`kicklog:${update.id}`, false)) {
+              await sock.sendMessage(ownerDmJid(), { text: `Anti-demote @ ${policy.groupName || update.id}: ${authorNum} tried to demote ${digit(jid)} — ${result}.` }).catch(() => {});
+            }
+          } catch {}
+        }
+        if (update.action === 'promote' && modeActive(policy, 'antipromote') && !authorPriv) {
+          const pmode = modeOf(policy.antipromote);
+          const ok = await revertRole(jid, false, 'promote');
+          let result = 'reverted';
+          if (ok) result = await punishAuthor('antipromote', pmode, 'promote');
+          else await sock.sendMessage(update.id, { text: XADON_AN(`Anti-promote: unauthorized promote by @${digit(author)} — victim @${digit(jid)} NOT restored (make me admin).`), mentions: [author, jid].filter(Boolean) }).catch(() => {});
+          if (pmode === 'on' && ok) await sock.sendMessage(update.id, { text: XADON_AN(`Anti-promote: unauthorized promote by @${digit(author)} reverted (@${digit(jid)} restored). Tip: .antipromote demote or .antipromote kick to also punish the rogue admin.`), mentions: [author, jid].filter(Boolean) }).catch(() => {});
+          try {
+            if (db.get(`kicklog:${update.id}`, false)) {
+              await sock.sendMessage(ownerDmJid(), { text: `Anti-promote @ ${policy.groupName || update.id}: ${authorNum} tried to promote ${digit(jid)} — ${result}.` }).catch(() => {});
+            }
+          } catch {}
+        }
+        if (db.get(`kicklog:${update.id}`, false) && (modeOf(policy.antidemote) === 'off' || modeOf(policy.antipromote) === 'off')) {
           await sock.sendMessage(ownerDmJid(), { text: `${String(update.action).toUpperCase()} @ ${policy.groupName || update.id}: ${authorNum} -> ${digit(jid)}` }).catch(() => {});
         }
       } catch {}
@@ -629,4 +742,4 @@ async function scheduleTempKick(sock, groupJid, userJid, durationMs) {
   return expiresAt;
 }
 
-module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded, pushMemberLog, getMemberLog, recentBySender, getRecent };
+module.exports = { handleMessage, handleParticipantsUpdate, startQuiz, scheduleTempKick, savePolicy, groupPolicy, modeOf, policyMode, digit, enforce, guarded, pushMemberLog, getMemberLog, recentBySender, getRecent, isLink, isInvite, isBareLink, isAnyLink, pollText, emojiCount };
