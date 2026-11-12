@@ -1,7 +1,7 @@
 // XADON AI · listgroups (imported format).
 module.exports = {
   name: 'listgroups',
-  aliases: ['groups', 'mygroups'],
+  aliases: ['groups', 'allgroups'],
   description: 'List groups the bot is in',
   category: 'owner',
   groupOnly: false,
