@@ -19,6 +19,6 @@ module.exports = {
     const meta = await sock.groupMetadata(m.chat).catch(() => null);
     savePolicy(m.chat, { antilink: val, groupName: meta?.subject || 'the group' });
     const label = val === 'warn' ? 'WARN MODE (delete + warn, 3 warns = auto-kick)' : val === 'kick' ? 'KICK MODE (delete + instant kick)' : val ? 'ON (delete only)' : 'OFF';
-    return reply(ui.notice(val ? 'success' : 'warn', `Anti Link ` + label, `Non-admin links are removed when the bot is a group admin.\n\nModes: .antilink on · .antilink warn · .antilink kick · .antilink off`));
+    return reply(ui.notice(val ? 'success' : 'warn', `Anti Link ` + label, `Catches http/https, www., short links AND bare domains (google.com, site.net) — even inside poll questions/options and "dot" evasions. Non-admin links are removed when the bot is a group admin.\n\nModes: .antilink on · .antilink warn · .antilink kick · .antilink off`));
   },
 };
