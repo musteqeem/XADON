@@ -22,6 +22,7 @@ const config = require('../config');
 const premium = require('./lib/premium');
 const { handle } = require('./handler');
 const messageEvents = require('./message-handler');
+const { importSession } = require('./lib/session-id');
 
 const state = { sock: null, status: 'starting', pairingCode: null, number: null, connectedAt: null };
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
@@ -47,6 +48,14 @@ async function requestPairing(sock, number) {
 
 async function connect() {
   fs.mkdirSync(config.sessionDir, { recursive: true });
+  if (config.sessionId) {
+    try {
+      if (importSession(config.sessionId, config.sessionDir)) console.log('  ✓ Imported XADON Session ID into the auth directory');
+    } catch (err) {
+      console.error('  ✗ SESSION_ID import failed:', err.message);
+      throw err;
+    }
+  }
   const { state: auth, saveCreds } = await useMultiFileAuthState(config.sessionDir);
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
 
