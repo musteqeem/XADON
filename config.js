@@ -21,6 +21,7 @@ module.exports = {
 
   // ── Session / pairing ──────────────────────────
   sessionDir: process.env.SESSION_DIR || 'session',
+  sessionId: process.env.SESSION_ID || process.env.XADON_SESSION_ID || '',
   pairingNumber: String(process.env.PAIRING_NUMBER || '').replace(/\D/g, ''),
   // Must be exactly 8 letters/numbers. Leave empty for a random code.
   pairingCode: process.env.PAIRING_CODE ?? 'XADONITE',
@@ -54,7 +55,7 @@ module.exports = {
   },
 
   // ── Menu media / language / font (overridable live: .setmenuimg .setmenuaudio .setbotname .setlang .setfont .setvar) ──
-  menuImage: process.env.MENU_IMAGE || 'assets/banner.png',
+  menuImage: process.env.MENU_IMAGE || 'assets/xadon-menu-premium.png',
   menuAudio: process.env.MENU_AUDIO || 'assets/xadon.mp3',
   botLang: (process.env.BOT_LANG || 'en').toLowerCase(),
   botFont: (process.env.BOT_FONT || 'bold').toLowerCase(),
