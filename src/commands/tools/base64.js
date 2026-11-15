@@ -1,6 +1,7 @@
 module.exports = {
   name: 'base64',
-  alias: ['b64', 'encode', 'decode'],
+  alias: ['base64x', 'b64'],
+  alias: [],
   desc: 'Base64 encode / decode',
   usage: '.base64 encode hello  ·  .base64 decode aGVsbG8=',
   async run({ args, reply, ui, prefix, m }) {
