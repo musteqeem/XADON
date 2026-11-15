@@ -57,7 +57,11 @@ function fillVars(text, { m, prefix } = {}) {
     .replace(/\{prefix\}/gi, prefix || '.')
     .replace(/\{date\}/gi, now.toLocaleDateString('en-GB'))
     .replace(/\{time\}/gi, now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }))
-    .replace(/\{number\}/gi, m ? String(m.sender).split('@')[0].split(':')[0] : '');
+    .replace(/\{number\}/gi, m ? String(m.sender).split('@')[0].split(':')[0] : '')
+    .replace(/@date\b/gi, now.toLocaleDateString('en-GB'))
+    .replace(/@time\b/gi, now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }))
+    .replace(/@user\b/gi, m?.pushName || 'User')
+    .replace(/@bot\b/gi, liveName());
 }
 
 // ---- global reply picture ----
