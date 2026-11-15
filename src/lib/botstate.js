@@ -11,7 +11,7 @@ function get(key, fallback) {
   return v === undefined || v === '' ? fallback : v;
 }
 function botName() { return get('BOT_NAME', process.env.BOT_NAME || 'XADON AI'); }
-function menuImage() { return get('MENU_IMAGE', process.env.MENU_IMAGE || 'assets/banner.png'); }
+function menuImage() { return get('MENU_IMAGE', process.env.MENU_IMAGE || 'assets/xadon-menu-premium.png'); }
 function menuAudio() { return get('MENU_AUDIO', process.env.MENU_AUDIO || 'assets/xadon.mp3'); }
 function botLang() { return (get('BOT_LANG', process.env.BOT_LANG || 'en') || 'en').toLowerCase(); }
 function botFont() { return (get('BOT_FONT', process.env.BOT_FONT || 'bold') || 'bold').toLowerCase(); }
