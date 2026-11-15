@@ -90,21 +90,35 @@ module.exports = {
         menu += `💡 Tips: *${prefix}menu list* | *${prefix}menu ai*\n⌬ ══〔 𓆩 *${BOT_NAME}* 𓆪 〕══ ⌬`;
       }
 
-      // ── image (MENU_IMAGE / assets/banner.png fallback) ──
+      // ── menu media (MENU_IMAGE / assets/xadon-menu-premium.* fallback) ──
       const path = require('path');
       const fs = require('fs');
       const imgRef = botstate.menuImage();
-      let imageBuffer = null;
+      let mediaBuffer = null;
+      let mediaType = 'image';
+      let mediaMime = 'image/jpeg';
       if (/^https?:\/\//i.test(imgRef)) {
-        try { const r = await fetch(imgRef); imageBuffer = Buffer.from(await r.arrayBuffer()); } catch (e) { console.error('MENU_IMAGE fetch', e.message); }
+        try {
+          const r = await fetch(imgRef); mediaBuffer = Buffer.from(await r.arrayBuffer());
+          const lower = imgRef.split('?')[0].toLowerCase();
+          if (/\.gif$/.test(lower)) { mediaType = 'gif'; mediaMime = 'image/gif'; }
+          else if (/\.(mp4|m4v|webm)$/.test(lower)) { mediaType = 'video'; mediaMime = 'video/mp4'; }
+        } catch (e) { console.error('MENU_IMAGE fetch', e.message); }
       } else {
         const abs = path.isAbsolute(imgRef) ? imgRef : path.join(botstate.ROOT, imgRef);
-        const fb = path.join(botstate.ROOT, 'assets/banner.png');
-        if (fs.existsSync(abs)) imageBuffer = fs.readFileSync(abs);
-        else if (fs.existsSync(fb)) imageBuffer = fs.readFileSync(fb);
+        const fallback = path.join(botstate.ROOT, 'assets/xadon-menu-premium.png');
+        const chosen = fs.existsSync(abs) ? abs : (fs.existsSync(fallback) ? fallback : path.join(botstate.ROOT, 'assets/banner.png'));
+        if (fs.existsSync(chosen)) {
+          mediaBuffer = fs.readFileSync(chosen);
+          const ext = path.extname(chosen).toLowerCase();
+          if (ext === '.gif') { mediaType = 'gif'; mediaMime = 'image/gif'; }
+          else if (['.mp4', '.m4v', '.webm'].includes(ext)) { mediaType = 'video'; mediaMime = 'video/mp4'; }
+        }
       }
 
-      if (imageBuffer) await sock.sendMessage(chatId, { image: imageBuffer, caption: menu }, { quoted: m.raw });
+      if (mediaBuffer && mediaType === 'video') await sock.sendMessage(chatId, { video: mediaBuffer, mimetype: mediaMime, caption: menu, gifPlayback: false }, { quoted: m.raw });
+      else if (mediaBuffer && mediaType === 'gif') await sock.sendMessage(chatId, { video: mediaBuffer, mimetype: mediaMime, caption: menu, gifPlayback: true }, { quoted: m.raw });
+      else if (mediaBuffer) await sock.sendMessage(chatId, { image: mediaBuffer, caption: menu }, { quoted: m.raw });
       else await sock.sendMessage(chatId, { text: menu }, { quoted: m.raw });
 
       // ── audio (MENU_AUDIO / assets/xadon.mp3 fallback) ──
