@@ -1,6 +1,6 @@
 // XADON V7 · rollcall - numbered member roll call.
 module.exports = {
-  name: 'rollcall', alias: ['roll', 'attendance2'], desc: 'Numbered roll call of members', usage: '.rollcall [message]', category: 'group', group: true, admin: true,
+  name: 'rollcall', alias: ['rollcall2', 'attendance2'], desc: 'Numbered roll call of members', usage: '.rollcall [message]', category: 'group', group: true, admin: true,
   async run({ sock, m, text, reply, ui }) {
     try {
       const meta = await sock.groupMetadata(m.chat).catch(() => null);
