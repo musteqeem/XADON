@@ -615,8 +615,10 @@ async function handleParticipantsUpdate(sock, update) {
         }
       }
       if (policy.welcome) {
-        const text = (policy.welcomeText || 'Welcome @user to @group!').replace(/@user/g, `@${digit(jid)}`).replace(/@group/g, policy.groupName || 'the group');
-        await sock.sendMessage(update.id, { text, mentions: [jid] }).catch(() => {});
+        const { renderGroupTemplate } = require('./lib/group-template');
+        const rendered = await renderGroupTemplate(policy.welcomeText || 'Welcome @user to @group!', { sock, groupJid: update.id, userJid: jid, groupName: policy.groupName });
+        const content = rendered.userpp ? { image: { url: rendered.userpp }, caption: rendered.text, mentions: rendered.mentions } : { text: rendered.text, mentions: rendered.mentions };
+        await sock.sendMessage(update.id, content).catch(() => sock.sendMessage(update.id, { text: rendered.text, mentions: rendered.mentions }).catch(() => {}));
       } else if (db.get('autowelcome', false)) {
         try {
           const meta = await sock.groupMetadata(update.id).catch(() => null);
@@ -674,8 +676,10 @@ async function handleParticipantsUpdate(sock, update) {
         }
       } catch {}
       if (policy.goodbye) {
-        const text = (policy.goodbyeText || 'Goodbye @user.').replace(/@user/g, `@${digit(jid)}`).replace(/@group/g, policy.groupName || 'the group');
-        await sock.sendMessage(update.id, { text, mentions: [jid] }).catch(() => {});
+        const { renderGroupTemplate } = require('./lib/group-template');
+        const rendered = await renderGroupTemplate(policy.goodbyeText || 'Goodbye @user.', { sock, groupJid: update.id, userJid: jid, groupName: policy.groupName });
+        const content = rendered.userpp ? { image: { url: rendered.userpp }, caption: rendered.text, mentions: rendered.mentions } : { text: rendered.text, mentions: rendered.mentions };
+        await sock.sendMessage(update.id, content).catch(() => sock.sendMessage(update.id, { text: rendered.text, mentions: rendered.mentions }).catch(() => {}));
       } else if (db.get('autogoodbye', false)) {
         await sock.sendMessage(update.id, { text: `👋 @${digit(jid)} left *${policy.groupName || 'the group'}*. We wish them well.`, mentions: [jid] }).catch(() => {});
       }
