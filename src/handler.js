@@ -50,7 +50,7 @@ function stickerHash(m) {
   } catch { return null; }
 }
 
-async function runCmd(sock, raw, cmd, m, args, name, prefix) {
+async function runCmd(sock, raw, cmd, m, args, name, prefix, rawText = '') {
   const botNumber = digits(sock.user?.id);
   // V8 · privilege layer: hard-owner (config/fromMe/self) · mod (full owner) · sudo (near owner)
   const isHardOwner = m.fromMe || m.number === botNumber || privs.isHardOwnerNumber(db, config, m.number);
@@ -142,7 +142,7 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix) {
 
   stats.commands++;
   const ctx = {
-    sock, m, args, text: args.join(' '), command: cmd.name, used: String(name).toLowerCase(), prefix,
+    sock, m, args, text: args.join(' '), rawText, command: cmd.name, used: String(name).toLowerCase(), prefix,
     isOwner, isHardOwner, isMod, isSudo, role: isHardOwner ? 'owner' : isMod ? 'mod' : privs.isSudoNumber(db, m.number) ? 'sudo' : (isAdmin ? 'admin' : 'user'),
     isAdmin, isBotAdmin, group, target,
     reply, fail, db, ui, config, premium, stats, loader,
@@ -457,10 +457,15 @@ async function handle(sock, raw) {
 
   if (!m.body.startsWith(prefix)) return;
 
-  const [name, ...args] = m.body.slice(prefix.length).trim().split(/\s+/);
+  const commandInput = m.body.slice(prefix.length).trim();
+  const commandMatch = commandInput.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+  if (!commandMatch) return;
+  const name = commandMatch[1];
+  const rawText = commandMatch[2] || '';
+  const args = rawText.trim() ? rawText.trim().split(/\s+/) : [];
   const cmd = loader.find(String(name).toLowerCase());
   if (!cmd) return;
-  await runCmd(sock, raw, cmd, m, args, name, prefix);
+  await runCmd(sock, raw, cmd, m, args, name, prefix, rawText);
 }
 
 module.exports = { handle, stats };
