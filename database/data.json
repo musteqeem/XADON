@@ -25,5 +25,58 @@
   "autosleep": false,
   "autoclean": false,
   "sudos": [],
-  "mods": []
+  "mods": [],
+  "groupPolicy:120363000000000000@g.us": {
+    "antilink": true,
+    "groupName": "WaPlus Lab",
+    "welcome": true,
+    "welcomeText": "Welcome @user to @group!",
+    "goodbye": false,
+    "goodbyeText": "Goodbye @user.",
+    "antibadword": true
+  },
+  "notes:2348000000000@s.whatsapp.net": [
+    {
+      "t": "test note",
+      "at": 1794374916573
+    },
+    {
+      "t": "test note",
+      "at": 1794374920958
+    },
+    {
+      "t": "test note",
+      "at": 1794375225561
+    },
+    {
+      "t": "test note",
+      "at": 1794375294573
+    },
+    {
+      "t": "test note",
+      "at": 1794639606295
+    }
+  ],
+  "todo:2348000000000@s.whatsapp.net": [
+    {
+      "t": "test task",
+      "done": false
+    },
+    {
+      "t": "test task",
+      "done": false
+    }
+  ],
+  "warns:120363000000000000@g.us:2348111111111@s.whatsapp.net": [
+    {
+      "by": "2348000000000@s.whatsapp.net",
+      "reason": "stop spam",
+      "at": 1794375295751
+    },
+    {
+      "by": "2348000000000@s.whatsapp.net",
+      "reason": "stop spam",
+      "at": 1794639611194
+    }
+  ]
 }
