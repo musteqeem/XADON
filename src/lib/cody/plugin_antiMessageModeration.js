@@ -1,0 +1,228 @@
+const fs = require('fs');
+const path = require('path');
+const { identityVariants, normalizeJid, participantJids, resolvePhoneJid, isPhoneJid } = require('./identityUtils');
+const { stripBotMarkerDeep, stripQuotedDeep } = require('./antiText');
+const { isModerationEnabled } = require('./moderationControl');
+const { isAntiPermitted } = require('./antiPermit');
+const { isAdminwatchEnabled, shouldApplyAdminwatch } = require('./adminwatch');
+
+function readJson(filePath) {
+    if (!fs.existsSync(filePath)) return {};
+    try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return {}; }
+}
+
+function writeJson(filePath, data) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+async function findMatchingParticipant(sock, participants, candidates) {
+    const candidateIds = new Set();
+    for (const candidate of candidates.filter(Boolean)) {
+        for (const variant of await identityVariants(sock, candidate)) {
+            candidateIds.add(normalizeJid(variant).toLowerCase());
+        }
+    }
+    if (!candidateIds.size) return null;
+
+    for (const participant of participants || []) {
+        for (const id of participantJids(participant)) {
+            if (candidateIds.has(normalizeJid(id).toLowerCase())) return participant;
+            for (const variant of await identityVariants(sock, id)) {
+                if (candidateIds.has(normalizeJid(variant).toLowerCase())) return participant;
+            }
+        }
+    }
+    return null;
+}
+
+function createAntiMessageModeration({
+    command, label, description, databaseName, warningDatabaseName,
+    detector, violationLabel, aliases = [], deleteMessage
+}) {
+    const dbPath = path.join(process.cwd(), 'database', databaseName);
+    const warningDbPath = path.join(process.cwd(), 'database', warningDatabaseName);
+
+    function ensureConfig(db, group) {
+        if (!db[group]) db[group] = { enabled: false, action: 'delete' };
+        if (typeof db[group].enabled !== 'boolean') db[group].enabled = false;
+        if (!['delete', 'warn', 'kick', 'tkick'].includes(db[group].action)) db[group].action = 'delete';
+        return db[group];
+    }
+
+    const plugin = {
+        name: command,
+        alias: aliases,
+        desc: description,
+        category: 'Admin',
+        groupOnly: true,
+        adminOnly: true,
+        reactions: { start: '🐾', success: '😡' },
+        execute: async (sock, m, { args, reply }) => {
+            const db = readJson(dbPath);
+            const config = ensureConfig(db, m.chat);
+            const subcommand = args[0]?.toLowerCase();
+            const requestedAction = subcommand === 'action' ? args[1]?.toLowerCase() : subcommand;
+
+            if (!subcommand || subcommand === 'status') {
+                const action = config.action === 'warn' ? 'WARN (3x → KICK)' : config.action.toUpperCase();
+                return reply(`*${label} Settings*\n\n• Status : ${config.enabled ? 'ON' : 'OFF'}\n• Action : ${action}\n\nCommands:\n• .${command} on / off\n• .${command} action <delete|warn|kick|tkick> [5m]\n• .${command} resetwarn @user`);
+            }
+            if (subcommand === 'on' || subcommand === 'off') {
+                config.enabled = subcommand === 'on';
+                writeJson(dbPath, db);
+                return reply(`*${label}* ${config.enabled ? 'enabled' : 'disabled'}.`);
+            }
+            if (['delete', 'warn', 'kick', 'tkick'].includes(requestedAction)) {
+                config.action = requestedAction;
+                const duration = subcommand === 'action' ? args[2] : args[1];
+                if (requestedAction === 'tkick' && duration) config.tkickDuration = String(duration);
+                writeJson(dbPath, db);
+                const detail = requestedAction === 'warn'
+                    ? '3 warnings = automatic kick'
+                    : requestedAction === 'tkick'
+                        ? `temporary kick${config.tkickDuration ? ` (${config.tkickDuration})` : ''}`
+                        : `${requestedAction} violating messages`;
+                return reply(`*${label} action:* ${requestedAction.toUpperCase()} (${detail}).`);
+            }
+            if (subcommand === 'resetwarn') {
+                const target = await resolvePhoneJid(sock, [m.mentionedJid?.[0], m.quoted?.sender, m.msg?.contextInfo?.participantAlt]);
+                if (!target) return reply(`Usage: .${command} resetwarn @user or reply to the user`);
+                const warnings = readJson(warningDbPath);
+                const warningKey = `${m.chat}_${normalizeJid(target)}`;
+                if (!warnings[warningKey]) return reply('User has no warnings.');
+                delete warnings[warningKey];
+                writeJson(warningDbPath, warnings);
+                return reply(`Warnings reset for @${target.split('@')[0]}`, { mentions: [target] });
+            }
+            return reply(`Usage: .${command} on | off | action <delete|warn|kick|tkick> [5m] | resetwarn @user`);
+        }
+    };
+
+    plugin.handleModeration = async function handleModeration(sock, m, mek) {
+        try {
+            // Only the message the member actually sent is inspected. The
+            // quoted message (contextInfo.quotedMessage / serialized `.quoted`)
+            // is removed so replying to a forwarded / view-once / flagged
+            // message can never be treated as sending one.
+            // (@crysnovax—FIX22-09-26)
+            const sanitize = value => stripQuotedDeep(stripBotMarkerDeep(value));
+            const detectionPayload = {
+                raw: sanitize(mek?.__rawMessage || mek?.message || {}),
+                message: sanitize(m.message || {}),
+                msg: sanitize(m.msg || {}),
+                serialized: sanitize(m)
+            };
+            if (!m.isGroup || (m.key?.fromMe && !m.__editModeration) || !isModerationEnabled(m.chat)) return false;
+            const adminwatchEnabled = isAdminwatchEnabled(m.chat, command);
+            if (!await shouldApplyAdminwatch(sock, m, command)) return false;
+            const config = readJson(dbPath)[m.chat];
+            if (!config?.enabled) return false;
+            if (!detector(detectionPayload, { m, mek, config, messageId: mek?.key?.id || m?.key?.id })) return false;
+
+            const metadata = await sock.groupMetadata(m.chat).catch(() => null);
+            if (!metadata?.participants) return false;
+
+            const senderCandidates = [m.key?.participantAlt, mek?.key?.participantAlt, m.sender, m.key?.participant];
+            const senderRecord = await findMatchingParticipant(sock, metadata.participants, senderCandidates);
+            // LID-first groups can arrive before the LID→PN mapping exists, and
+            // resolvePhoneJid then returns null — which silently disabled every
+            // anti hook. Fall back to the phone number carried by the group
+            // metadata participant we already matched.
+            const senderJid = await resolvePhoneJid(sock, senderCandidates)
+                || participantJids(senderRecord || {}).find(isPhoneJid)
+                || null;
+            const senderIdentity = normalizeJid(m.sender || m.key?.participant || senderJid || '');
+            if (!senderJid || !senderIdentity) return false;
+
+            if (await isAntiPermitted(sock, m.chat, [senderJid, senderIdentity, ...senderCandidates])) return false;
+            if (!adminwatchEnabled && !m.__editModeration && (senderRecord?.admin === 'admin' || senderRecord?.admin === 'superadmin')) return false;
+
+            const botCandidates = [sock.user?.id, sock.user?.lid].filter(Boolean);
+            const botRecord = await findMatchingParticipant(sock, metadata.participants, botCandidates);
+            const botIsAdmin = botRecord?.admin === 'admin' || botRecord?.admin === 'superadmin';
+            if (!botIsAdmin) {
+                await sock.sendMessage(m.chat, { text: `${label} cannot remove this content because the bot is not a group admin.` }, { quoted: mek }).catch(() => {});
+                return false;
+            }
+
+            const removalContext = {
+                metadata,
+                senderCandidates,
+                senderJid,
+                senderIdentity,
+                senderRecord,
+            };
+            const removeMessage = deleteMessage
+                ? () => deleteMessage(sock, m, mek, removalContext)
+                : () => sock.sendMessage(m.chat, { delete: mek?.__deleteKey || mek?.key || m.key });
+            const action = ['delete', 'warn', 'kick', 'tkick'].includes(config.action) ? config.action : 'delete';
+            let removalError;
+            try {
+                await removeMessage();
+            } catch (error) {
+                removalError = error;
+                console.error(`[${command.toUpperCase()} DELETE ERROR]`, error?.stack || error?.message || error);
+                if (action === 'delete') {
+                    await sock.sendMessage(m.chat, { text: `${label} detected prohibited content, but WhatsApp rejected the delete request. The bot is already recognized as an admin; check the server log for the protocol error.` }, { quoted: mek }).catch(() => {});
+                    return false;
+                }
+            }
+
+            const mention = `@${senderJid.split('@')[0]}`;
+            const sendNotice = text => sock.sendMessage(m.chat, { text, mentions: [senderJid] }, { quoted: mek }).catch(() => {});
+            const deletionNote = removalError ? ' WhatsApp rejected content deletion, but the moderation action was still applied.' : '';
+            const logAction = actionName => {
+                try {
+                    require('./modLog').recordAction(m.chat, {
+                        command, actor: m.sender || senderJid, target: senderJid, action: actionName,
+                    });
+                } catch {}
+            };
+
+            if (action === 'delete') {
+                await sendNotice(`${mention} ${violationLabel} are not allowed here. The content was deleted.${deletionNote}`);
+                logAction('delete');
+                return true;
+            }
+            if (action === 'kick') {
+                await sendNotice(`${mention} was removed for ${violationLabel}.${deletionNote}`);
+                await sock.groupParticipantsUpdate(m.chat, [senderJid], 'remove');
+                logAction('kick');
+                return true;
+            }
+            if (action === 'tkick') {
+                const { parseTime, tkick } = require('./tkick');
+                const duration = parseTime(config.tkickDuration || '5m') || 5 * 60 * 1000;
+                await sendNotice(`${mention} was temporarily removed for ${violationLabel}.${deletionNote}`);
+                await tkick(sock, m.chat, senderJid, duration, `Anti ${label}`);
+                logAction('tkick');
+                return true;
+            }
+
+            const warnings = readJson(warningDbPath);
+            const warningKey = `${m.chat}_${normalizeJid(senderJid)}`;
+            const count = (warnings[warningKey]?.count || 0) + 1;
+            if (count >= 3) {
+                delete warnings[warningKey];
+                writeJson(warningDbPath, warnings);
+                await sendNotice(`${mention} was removed after 3/3 warnings for ${violationLabel}.${deletionNote}`);
+                await sock.groupParticipantsUpdate(m.chat, [senderJid], 'remove');
+                logAction('warn→kick');
+            } else {
+                warnings[warningKey] = { count, user: normalizeJid(senderJid) };
+                writeJson(warningDbPath, warnings);
+                await sendNotice(`${mention} warning ${count}/3: ${violationLabel} are not allowed.${deletionNote}`);
+                logAction('warn');
+            }
+            return true;
+        } catch (error) {
+            console.error(`[${command.toUpperCase()} ERROR]`, error.message);
+            return false;
+        }
+    };
+
+    return plugin;
+}
+
+module.exports = { createAntiMessageModeration, normalizeJid, readJson, writeJson };
