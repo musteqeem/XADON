@@ -70,6 +70,7 @@ async function connect() {
   });
   premium.install(sock);
   state.sock = sock;
+  try { require('./lib/codyBridge').install(sock); } catch (e) { console.warn('codyBridge:', e.message); }
   state.status = 'connecting';
 
   sock.ev.on('creds.update', saveCreds);
@@ -206,7 +207,7 @@ async function connect() {
         if (policy.anticall || needGlobal || callBlock) {
           await sock.rejectCall(call.id, call.from).catch(() => {});
           if (chat?.endsWith('@g.us')) {
-            await sock.sendMessage(chat, { text: '_*亗 call rejected*_\nCalls are disabled in this group.' }).catch(() => {});
+            await sock.sendMessage(chat, { text: '_*֎ call rejected*_\nCalls are disabled in this group.' }).catch(() => {});
           }
         }
       }
@@ -222,21 +223,21 @@ async function connect() {
         if (!g?.id) continue;
         const policy = messageEvents.groupPolicy(g.id) || {};
         if (policy.antidp && (g.icon || g.subject)) {
-          await sock.sendMessage(g.id, { text: '_*亗 group update blocked*_\nGroup icon/subject changes are disabled (antidp is on).' }).catch(() => {});
+          await sock.sendMessage(g.id, { text: '_*♛ group update blocked*_\nGroup icon/subject changes are disabled (antidp is on).' }).catch(() => {});
         }
         try {
           if (policy.antidesc && typeof g.desc === 'string') {
             const old = dbo.get(`gcdesc:${g.id}`, null);
             if (old != null && old !== g.desc && typeof sock.groupUpdateDescription === 'function') {
               await sock.groupUpdateDescription(g.id, old).catch(() => {});
-              await sock.sendMessage(g.id, { text: '_*亗 description restored*_\nGroup description changes are blocked (antidesc is on).' }).catch(() => {});
+              await sock.sendMessage(g.id, { text: '_*☬ description restored*_\nGroup description changes are blocked (antidesc is on).' }).catch(() => {});
             }
           }
           if (policy.antiname && g.subject) {
             const oldN = dbo.get(`gcname:${g.id}`, null);
             if (oldN && oldN !== g.subject && typeof sock.groupUpdateSubject === 'function') {
               await sock.groupUpdateSubject(g.id, oldN).catch(() => {});
-              await sock.sendMessage(g.id, { text: '_*亗 group name restored*_\nGroup name changes are blocked (antiname is on).' }).catch(() => {});
+              await sock.sendMessage(g.id, { text: '_*✪ group name restored*_\nGroup name changes are blocked (antiname is on).' }).catch(() => {});
             }
           }
         } catch {}
