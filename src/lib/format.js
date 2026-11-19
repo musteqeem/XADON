@@ -25,7 +25,8 @@ const path = require('path');
 const crypto = require('crypto');
 const db = require('./database');
 
-const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro'];
+const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro', 'neon', 'glass', 'minimal', 'gold', 'ocean', 'royal', 'candy', 'ghost', 'veil', 'pulse'];
+// V10 - 10 NEW premium formats (CODY premium sources: prexzy/prexzyMedia rich cards, richRelay grids, htmlGame webviews, poolcard/router, socialDl captions, statusHandler quotes, albumpic carousels, hiddenmsg cards, metamsg tables, sendlocation pins): neon glass minimal gold ocean royal candy ghost veil pulse.
 const PIC_FILE = path.resolve(__dirname, '../../assets/reply-pic.jpg');
 
 const liveName = () => {
@@ -268,6 +269,17 @@ async function sendFormatted(sock, chat, text, opts = {}) {
     const retro = `[ ${bn} ]\n${String(text ?? '').replace(/[*_`~]/g, '')}`.slice(0, 4000);
     return sock.sendMessage(chat, { text: retro, ...extra }, quoted ? { quoted } : undefined);
   }
+  const bn10 = liveName();
+  if (fmt === 'neon') { const s = `\u2591\u2592\u2593 ${bn10.toUpperCase()} \u2593\u2592\u2591\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'glass') { const s = `\u256D\u2500\u2500 \u00B7 \u00B7 \u2500\u2500\u256E\n${String(text ?? '')}\n\u2570\u2500\u2500 \u00B7 \u00B7 \u2500\u2500\u256F\n  \u232C ${bn10}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'minimal') { return sock.sendMessage(chat, { text: String(text ?? '').replace(/[*_`~]/g, '').slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'gold') { const s = `\u272A ${bn10}\n\u2756\u2756\u2756\u2756\u2756\u2756\u2756\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'ocean') { const s = `\u224B\u224B\u224B ${bn10} \u224B\u224B\u224B\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'royal') { const s = `\u265B ${bn10.toUpperCase()} \u265B\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'candy') { const s = `\u2726 ${String(text ?? '')} \u2726  ${bn10}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'ghost') { const s = `${String(text ?? '').replace(/[*_`~]/g, '')}\n\u00B7 \u00B7 \u00B7 ${bn10}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'veil') { const s = `\u262C ${String(text ?? '')} \u262C`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'pulse') { const s = `\u25C9 \u2500\u2500\u2500 ${bn10} \u2500\u2500\u2500 \u25C9\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
   return sock.sendMessage(chat, { text: body, ...extra }, quoted ? { quoted } : undefined);
 }
 
