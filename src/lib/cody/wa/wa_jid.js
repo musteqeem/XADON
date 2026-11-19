@@ -1,0 +1,6 @@
+!ev let jid = "86892221567021@lid"; let res = {}; try{res.user = await sock.onWhatsApp(jid)}catch(e){res.userErr=e.message} try{res.profile = await sock.profilePictureUrl(jid,'image').catch(()=>null)}catch(e){} try{res.presence = await sock.presenceSubscribe(jid)}catch(e){} try{res.status = await sock.fetchStatus(jid).catch(()=>null)}catch(e){} try{res.business = await sock.getBusinessProfile(jid).catch(()=>null)}catch(e){} try{res.contact = sock.contacts[jid]||{}}catch(e){} return {jid,...res}
+
+
+!ev let jid = m.quoted?.sender || m.mentionedJid?.[0] || m.sender; let c = sock.contacts[jid]||{}; return {jid, lid:jid.includes('@lid')?jid:null, pn:jid.split('@')[0], name:c.name||c.notify||'Unknown', notify:c.notify, vname:c.vname, isBusiness:c.isBusiness, isContact:c.isContact}
+
+!ev let groupId = m.chat; let userJid = "86892221567021@lid"; let meta = await sock.groupMetadata(groupId).catch(()=>{}); let member = meta?.participants?.find(p=>p.id==userJid); let info = {group:meta?.subject, member:member, admin:member?.admin||null, jid:userJid}; try{info.profile = await sock.profilePictureUrl(userJid,'image').catch(()=>null)}catch(e){} try{info.status = await sock.fetchStatus(userJid).catch(()=>null)}catch(e){} try{info.contact = sock.contacts[userJid]||{}}catch(e){} return info
