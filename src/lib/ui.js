@@ -20,7 +20,8 @@ const liveName = () => {
 const LINE = '─'.repeat(22);
 const DOTS = '┄'.repeat(24);
 
-const footer = () => `  ⌬ ${fonts.smallCaps(liveName())} · ${fonts.smallCaps('premium')} · ᴠ${config.version}`;
+const footer = () => { try { const c = require('./database').get('customFooter', ''); if (c) return `  ⌬ ${String(c).slice(0, 120)}`; } catch {} return `  ⌬ ${fonts.smallCaps(liveName())} · ${fonts.smallCaps('premium')} · ᴠ${config.version}`; };
+const setCustomFooter = (v) => require('./database').set('customFooter', String(v || '').slice(0, 120));
 
 const row = (label, value) => `│ ◈ ${fonts.smallCaps(label)} ⟶ ${value}`;
 
@@ -82,4 +83,4 @@ const bytes = (n) => {
   return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 };
 
-module.exports = { card, notice, bar, section, duration, bytes, footer, row, fonts, LINE, DOTS };
+module.exports = { card, notice, bar, section, duration, bytes, footer, setCustomFooter, row, fonts, LINE, DOTS };
