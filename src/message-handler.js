@@ -23,7 +23,9 @@ const groupPolicy = (jid) => db.get(`groupPolicy:${jid}`, {});
 const savePolicy = (jid, next) => db.set(`groupPolicy:${jid}`, { ...groupPolicy(jid), ...next });
 
 const BADWORDS = ['fuck', 'shit', 'bitch', 'dick', 'pussy', 'nigga', 'nigger', 'bastard', 'whore', 'slut', 'asshole', 'motherfucker', 'fucker', 'cunt', 'dildo', 'porn', 'hentai', 'horny', 'sexy bitch', 'kill yourself', 'kys'];
-const XADON_AN = (s) => `_*亗 ${s}*_`;
+const XADON_MARKS = ['亗','֎','♛','☬','✪','⚉'];
+const XADON_PICK = () => XADON_MARKS[Math.floor(Math.random()*XADON_MARKS.length)];
+const XADON_AN = (s) => `_*${XADON_PICK()} ${s}*_`;
 const hasBadWord = (text = '') => { const low = ` ${String(text).toLowerCase()} `; return BADWORDS.some((w) => low.includes(w)); };
 const isLink = (text = '') => /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|t\.me\/|discord\.gg\/|bit\.ly|tinyurl|youtu\.be)[^\s]+/i.test(text);
 const isInvite = (text = '') => /(?:chat\.whatsapp\.com\/|wa\.me\/|t\.me\/|discord\.gg\/)[^\s]+/i.test(text);
@@ -250,7 +252,7 @@ async function enforce(sock, raw, jid, sender, number, reason, rule) {
 
   await sock.sendMessage(jid, { delete: raw.key }).catch(() => {});
   const tag = `@${digit(sender)}`;
-  const cleanReason = String(reason).replace(/^_\*亗\s*/, '').replace(/\*_$/, '');
+  const cleanReason = String(reason).replace(/^_\*[亗֎♛☬✪⚉]\s*/, '').replace(/\*_$/, '');
 
   if (mode === 'kick') {
     try {
