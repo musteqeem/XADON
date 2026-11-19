@@ -2,7 +2,7 @@ module.exports = {
   name: 'settings',
   alias: ['set', 'xset', 'mode'],
   desc: 'Prefix and bot mode',
-  usage: '.settings prefix !  |  .settings mode private',
+  usage: '.settings prefix !  |  .settings mode private  |  .settings footer <text|off>',
   owner: true,
   async run({ args, used, reply, db, config, ui, prefix, loader }) {
     const { fonts } = ui;
@@ -17,6 +17,12 @@ module.exports = {
     if (key === 'mode' && ['public', 'private'].includes(value?.toLowerCase())) {
       db.set('mode', value.toLowerCase());
       return reply(ui.notice('success', `Mode ${value}`, value.toLowerCase() === 'private' ? 'Only the owner can use the bot now.' : 'Everyone can use the bot now.'));
+    }
+    if (key === 'footer') {
+      const v = args.slice(1).join(' ').trim();
+      if (!v || /^off$/i.test(v)) { db.delete('customFooter'); return reply(ui.notice('success', 'Footer cleared', 'Default premium footer restored.')); }
+      db.set('customFooter', v.slice(0, 120));
+      return reply(ui.notice('success', 'Footer updated', `Every reply now ends with:\n${v.slice(0, 120)}`));
     }
     if (key === 'reload') {
       const total = loader.load().size;
