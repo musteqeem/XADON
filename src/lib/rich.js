@@ -21,11 +21,11 @@ try { _baileys = require('@musteqeem/baileys'); } catch { _baileys = null; }
 /** Xadon-styled quote line: _*亗 text*_ (WhatsApp italic+bold safe, no emoji). */
 function xadon(text = '') {
   const t = String(text).replace(/[_*`]/g, '').slice(0, 1500);
-  return `_*亗 ${t}*_`;
+  return `_*${pickMark()} ${t}*_`;
 }
 
 function xadonCard(title = '', body = '', footer = '') {
-  const lines = [`_*亗 ${String(title).slice(0, 120)}*_`];
+  const lines = [`_*${pickMark()} ${String(title).slice(0, 120)}*_`];
   if (body) lines.push('', String(body).slice(0, 3000));
   if (footer) lines.push('', `⌬ ${footer}`);
   return lines.join('\n');
@@ -108,4 +108,4 @@ async function sendCopyCard(sock, chat, { text, copyText, footer, quoted } = {})
   }
 }
 
-module.exports = { xadon, xadonCard, sendHtmlPrimitive, sendRichCard, sendOpenLink, sendCopyCard };
+module.exports = { xadon, xadonCard, sendHtmlPrimitive, sendRichCard, sendOpenLink, sendCopyCard, MARKS, pickMark };
