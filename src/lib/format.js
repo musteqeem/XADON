@@ -26,7 +26,7 @@ const crypto = require('crypto');
 const db = require('./database');
 
 const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro', 'neon', 'glass', 'minimal', 'gold', 'ocean', 'royal', 'candy', 'ghost', 'veil', 'pulse'];
-// V10 - 10 NEW premium formats (CODY premium sources: prexzy/prexzyMedia rich cards, richRelay grids, htmlGame webviews, poolcard/router, socialDl captions, statusHandler quotes, albumpic carousels, hiddenmsg cards, metamsg tables, sendlocation pins): neon glass minimal gold ocean royal candy ghost veil pulse.
+// V10 - 10 NEW premium formats (XADON premium sources: prexzy rich cards, richRelay grids, htmlGame webviews, poolcard/router, translation service, albumpic carousels, hiddenmsg cards, metamsg tables, sendlocation pins): neon glass minimal gold ocean royal candy ghost veil pulse.
 const PIC_FILE = path.resolve(__dirname, '../../assets/reply-pic.jpg');
 
 const liveName = () => {
