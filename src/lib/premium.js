@@ -3,7 +3,7 @@
  *   WAPLUS · PREMIUM LAYER (XADON V6 UPGRADED)
  *   Adds the "premium bot" look to every message
  *   automatically, the same tricks used by
- *   Cody AI, Crysnova AI and Xadon AI:
+ *   Xadon AI:
  *
  *   ◈ AI badge          → content.ai = true (private chats only)
  *   ◈ Verified quote    → reply quotes a verified contact card
