@@ -70,7 +70,7 @@ async function connect() {
   });
   premium.install(sock);
   state.sock = sock;
-  try { require('./lib/codyBridge').install(sock); } catch (e) { console.warn('codyBridge:', e.message); }
+  try { require('./lib/xadonBridge').install(sock); } catch (e) { console.warn('xadonBridge:', e.message); }
   state.status = 'connecting';
 
   sock.ev.on('creds.update', saveCreds);
