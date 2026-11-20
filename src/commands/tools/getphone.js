@@ -6,7 +6,7 @@ const {
     normalizeJid,
     resolvePhoneJid,
     resolvePhoneJidWithMetadata,
-} = require('../../lib/cody/identityUtils');
+} = require('../../lib/xadonfx/identityUtils');
 
 const PHONE_JID = '@s.whatsapp.net';
 const ALLOWED_SUFFIXES = ['@s.whatsapp.net', '@c.us', '@lid'];
