@@ -18,7 +18,9 @@ const crypto = require('crypto');
 let _baileys = null;
 try { _baileys = require('@musteqeem/baileys'); } catch { _baileys = null; }
 
-/** Xadon-styled quote line: _*亗 text*_ (WhatsApp italic+bold safe, no emoji). */
+/** Xadon-styled quote line with rotating life mark (亗 ֎ ♛ ☬ ✪ ⚉). */
+const MARKS = ['亗','֎','♛','☬','✪','⚉'];
+const pickMark = () => MARKS[Math.floor(Math.random()*MARKS.length)];
 function xadon(text = '') {
   const t = String(text).replace(/[_*`]/g, '').slice(0, 1500);
   return `_*${pickMark()} ${t}*_`;
