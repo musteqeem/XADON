@@ -1,6 +1,6 @@
 'use strict';
 
-const { request } = require('../../lib/cody/prexzy');
+const { request } = require('../../lib/xadonfx/prexzy');
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 function escapeHtml(value = '') {
