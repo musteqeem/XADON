@@ -13,6 +13,7 @@ module.exports = {
       let short = await get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(input)}`).catch(() => '');
       if (!short.startsWith('http')) short = await get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(input)}`);
       if (!short.startsWith('http')) throw new Error('no service');
+      try { await require('../../lib/rich').sendCopyLabel(sock, m.chat, { title: 'Copy short link', value: short, quoted: m.raw }); } catch {}
       return reply(ui.card({ icon: '◈', title: 'Link shortened', rows: [['short', short], ['long', input.slice(0, 80) + (input.length > 80 ? '…' : '')]] }));
     } catch {
       return reply(ui.notice('error', 'Shorten failed', 'Both shorteners are down. Try again later.'));
