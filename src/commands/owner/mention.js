@@ -32,7 +32,8 @@ const CFG_KEY = 'mention:config';
 const R_FILE = path.resolve(__dirname, '../../../database/mention-react.webp');
 const M_FILE = path.resolve(__dirname, '../../../database/mention-msg.webp');
 
-const DEFAULTS = { mode: 'off', reactEmoji: '', msgEmoji: '', msgText: '', reactSticker: false, msgSticker: false };
+const DEFAULTS = { mode: 'off', reactEmoji: '', msgEmoji: '', msgText: '', reactSticker: false, msgSticker: false, msgSprem: false };
+const S_FILE = path.resolve(__dirname, '../../../database/mention-sprem.webp');
 
 function getCfg(db) {
   try { return { ...DEFAULTS, ...(db.get(CFG_KEY, {})) }; } catch { return { ...DEFAULTS }; }
@@ -252,7 +253,10 @@ async function doRespond(sock, raw, m, db) {
 
   if (wantMsg) {
     try {
-      if (cfg.msgSticker && fs.existsSync(M_FILE)) {
+      if (cfg.msgSprem && fs.existsSync(S_FILE)) {
+        await sock.sendMessage(m.chat, { sticker: fs.readFileSync(S_FILE) }, { quoted: raw }).catch(() => {});
+        didMsg = true;
+      } else if (cfg.msgSticker && fs.existsSync(M_FILE)) {
         await sock.sendMessage(m.chat, { sticker: fs.readFileSync(M_FILE) }, { quoted: raw }).catch(() => {});
         didMsg = true;
       } else {
@@ -274,11 +278,13 @@ function statusCard(ui, db) {
     rows: [
       ['react (-r)', c.reactSticker ? `sticker ${on(true)}` : (c.reactEmoji ? `${c.reactEmoji} ${on(true)}` : on(false))],
       ['message (-m)', c.msgSticker ? `sticker ${on(true)}` : ([c.msgEmoji, c.msgText].filter(Boolean).join(' · ') || on(false))],
+    ['sprem', c.msgSprem ? `premium sticker ${on(true)}` : on(false)],
     ],
     body: [
       '.mention -r 😎 · -r sticker (reply)',
       '.mention -m 😎 · -m sticker (reply)',
       '.mention -m <custom reply text>',
+      '.mention sprem (reply to image/video/sticker)',
       '.mention on · off · -r off · -m off',
       'Triggers: @tag · reply to owner · raw number (234… / @234…)',
     ].join('\n'),
@@ -309,6 +315,37 @@ module.exports = {
     if (sub === 'off' || sub === 'disable') {
       setCfg(db, { mode: 'off' });
       return reply(ui.notice('warn', 'Mention off', 'The owner-tag responder is disabled.'));
+    }
+
+    if (sub === 'sprem' || sub === 'premiumsticker') {
+      const q = m.quoted;
+      const mime = q?.mimetype || m.mimetype || '';
+      if (!/image|video|webp/.test(mime)) return reply(ui.notice('info', 'Mention sprem', `Reply to an image, video or sticker, then send:\n${prefix}mention sprem`));
+      try {
+        const media = await (q?.download ? q.download() : m.download());
+        if (!media?.length) throw new Error('empty media');
+        const sharp = require('sharp');
+        const { withExif } = require('../../lib/stickerExif');
+        const botName = (() => { try { return require('../../lib/botstate').botName(); } catch { return 'XADON AI'; } })();
+        let webp;
+        if (/webp/.test(mime)) webp = media;
+        else if (/video/.test(mime)) {
+          const { execSync } = require('child_process');
+          const os = require('os'), fsp = require('fs');
+          const tmp = os.tmpdir(); const inp = `${tmp}/sprem_${Date.now()}`;
+          fsp.writeFileSync(inp, media);
+          try { execSync(`ffmpeg -y -i "${inp}" -vf "fps=15,scale=512:512:force_original_aspect_ratio=increase,crop=512:512:(iw-ow)/2:(ih-oh)/2,format=yuva420p" -c:v libwebp -lossless 0 -q:v 70 -loop 0 -an -preset default "${inp}.webp"`, { stdio: 'ignore' }); webp = fsp.readFileSync(`${inp}.webp`); }
+          finally { try { fsp.unlinkSync(inp); } catch {} try { fsp.unlinkSync(`${inp}.webp`); } catch {} }
+        } else {
+          webp = await sharp(media).resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).webp({ quality: 80 }).toBuffer();
+        }
+        const premium = await withExif(webp, botName, m.pushName || 'XADON').catch(() => webp);
+        fs.mkdirSync(path.dirname(S_FILE), { recursive: true });
+        fs.writeFileSync(S_FILE, premium);
+        const c = getCfg(db);
+        setCfg(db, { msgSprem: true, mode: c.mode === 'off' ? 'message' : c.mode === 'react' ? 'both' : c.mode });
+        return reply(ui.notice('success', 'Premium sticker saved', 'Whenever someone tags the owner, the bot replies with this sticker in premium look.'));
+      } catch (e) { return reply(ui.notice('error', 'Sprem failed', String(e.message || e).slice(0, 200))); }
     }
 
     if (sub === '-r' || sub === 'r') {
