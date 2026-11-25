@@ -1,9 +1,4 @@
-/**
- * XADON V9 · vvp — view-once rescue to YOUR DM.
- * Reply to a view-once photo/video/voice note with .vvp and the bot
- * re-sends that media to the owner's DM (permanent copy).
- */
-const { downloadMediaMessage } = require('@musteqeem/baileys');
+/** XADON · vvp — view-once rescue to YOUR DM (fixed media-key path). */
 module.exports = {
   name: 'vvp',
   alias: ['vvdm', 'rescuevv', 'savevv'],
@@ -12,17 +7,29 @@ module.exports = {
   category: 'tools',
   owner: true,
   async run({ sock, m, reply, ui, db, config }) {
-    const rawstore = require('../../lib/rawstore');
     const q = m.quoted;
     const target = q || (m.isMedia ? m : null);
     if (!target) return reply(ui.notice('info', 'View-once rescue', 'Reply to a view-once photo, video or voice note with .vvp and I will send it to your DM.'));
+    let buf, kind = target.type || '';
     try {
-      const raw = (q && rawstore.get(m.chat, q.id)) || target.raw || m.raw;
-      const buf = await downloadMediaMessage(raw, 'buffer', {});
+      const { downloadViewOnce } = require('../../lib/viewonce');
+      const res = await downloadViewOnce(sock, m);
+      buf = res.buf; kind = res.kind;
+    } catch (e) {
+      try {
+        const { downloadMediaMessage } = require('@musteqeem/baileys');
+        const rawstore = require('../../lib/rawstore');
+        const raw = (q && rawstore.get(m.chat, q.id)) || target.raw || m.raw;
+        buf = await downloadMediaMessage(raw, 'buffer', {});
+      } catch (e2) {
+        return reply(ui.notice('error', 'Rescue failed', `${String(e.message || e2.message || e2).slice(0, 250)}\nOpen the view-once once first, then reply fast — expired media cannot be recovered.`));
+      }
+    }
+    try {
       const ownerJid = `${String(config.ownerNumbers[0]).replace(/\D/g, '')}@s.whatsapp.net`;
       const from = `@${String(m.sender).split('@')[0].split(':')[0]}`;
       const caption = `◈ 𝗩𝗩𝗣 𝗥𝗘𝗦𝗖𝗨𝗘\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\nfrom ${from} · ${m.isGroup ? 'group' : 'dm'}\n${new Date().toLocaleString()}\n\n${ui.footer()}`;
-      const t = target.type || '';
+      const t = String(kind || '');
       const payload =
         t.includes('image') ? { image: buf, caption } :
         t.includes('video') ? { video: buf, caption, gifPlayback: !!target.message?.videoMessage?.gifPlayback } :
@@ -40,7 +47,7 @@ module.exports = {
       } catch {}
       return reply(ui.notice('success', 'Sent to DM', 'The view-once media is now saved in your DM.'));
     } catch (e) {
-      return reply(ui.notice('error', 'Rescue failed', `${String(e.message || e).slice(0, 250)}\nOpen the view-once once first, then reply fast — expired media cannot be recovered.`));
+      return reply(ui.notice('error', 'Rescue failed', String(e.message || e).slice(0, 250)));
     }
   },
 };
