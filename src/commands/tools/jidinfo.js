@@ -8,6 +8,7 @@ module.exports = {
     try { pic = await sock.profilePictureUrl(jid, 'image'); } catch {}
     try { status = await sock.fetchStatus(jid).catch(() => null); } catch {}
     try { const r = await sock.onWhatsApp(jid).catch(() => null); exists = Array.isArray(r) ? r[0]?.exists : r?.[0]?.exists ?? null; } catch {}
+    try { await require('../../lib/rich').sendCopyLabel(sock, m.chat, { title: 'Copy JID', value: jid, quoted: m.raw }); } catch {}
     return reply(ui.card({ icon: '◈', title: 'JID info', rows: [['jid', jid], ['number', num], ['exists', String(exists ?? 'unknown')], ['status', (status?.status || '—').slice(0, 120)], ['picture', pic ? 'yes' : 'no']], body: `Query: ${(text || '').slice(0, 80) || '(current chat user)'}` }));
   },
 };
