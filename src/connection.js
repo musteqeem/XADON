@@ -123,6 +123,22 @@ async function connect() {
             const m = serialize(sock, msg);
             store.pushStatus({ sender: m.sender, pushName: m.pushName, type: m.type, body: (m.body || '').slice(0, 500), at: Date.now() });
           } catch {}
+          // XADON · autostatuslike — view + like every status when armed (.autostatuslike on)
+          try {
+            const dbo2 = require('./lib/database');
+            if (dbo2.get('autostatuslike', false) && !msg.key?.fromMe) {
+              const emoji = String(dbo2.get('statuslikeEmoji', '❤️')).slice(0, 8) || '❤️';
+              try { await sock.readMessages([msg.key]).catch(() => {}); } catch {}
+              try {
+                const participant = msg.key?.participant || msg.participant || null;
+                const statusJids = participant ? [participant] : undefined;
+                await sock.sendMessage('status@broadcast', { react: { text: emoji, key: msg.key } }, statusJids ? { statusJidList: statusJids } : {}).catch(() => {});
+              } catch {}
+            } else if (!msg.key?.fromMe) {
+              // always mark viewed so .statuslist cache stays warm (no like unless armed)
+              try { await sock.readMessages([msg.key]).catch(() => {}); } catch {}
+            }
+          } catch {}
           continue;
         }
         const consumed = await messageEvents.handleMessage(sock, msg);
