@@ -9,6 +9,6 @@ module.exports = {
     const { fonts } = ui;
     if (!text) return reply(ui.notice('info', 'Binary', `${fonts.mono(`${prefix}binary hi`)}`));
     const out = [...text].map((c) => c.charCodeAt(0).toString(2).padStart(8, '0')).join(' ').slice(0, 1500);
-    return reply(ui.card({ icon: '01', title: 'Binary', subtitle: 'encoder', rows: [], body: `${fonts.mono(out)}\n\n${ui.footer()}` }));
+    return reply(ui.card({ icon: '01', title: 'Binary', subtitle: 'encoder', rows: [], body: '```text\n' + out + '\n```\n\n' + ui.footer() }));
   },
 };
