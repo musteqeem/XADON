@@ -99,6 +99,25 @@ async function sendOpenLink(sock, chat, { url, label = '☁︎ Open Link', quote
 }
 
 /** Copy-code card (nativeFlow copy button). */
+/** Fenced code block shared by .md and code-output commands. */
+function codeblock(lang = '', code = '') {
+  return '```' + String(lang || '').slice(0, 16) + '\n' + String(code || '').slice(0, 3500) + '\n```';
+}
+
+/** Tap-to-copy label card (nativeFlow copy button, codeblock fallback). */
+async function sendCopyLabel(sock, chat, { title = 'Copy', value = '', quoted } = {}) {
+  const v = String(value || '').slice(0, 1500);
+  try {
+    return await sock.sendMessage(chat, {
+      text: `\u25C8 ${String(title).slice(0, 80)} \u27F6\n${v}`,
+      footer: '\u2388 Tap Copy to grab it',
+      nativeFlow: [{ text: '\u2399 Copy', copy: v }],
+    }, quoted ? { quoted } : {});
+  } catch {
+    return sock.sendMessage(chat, { text: `\u25C8 ${String(title).slice(0, 80)}\n` + codeblock('text', v) }, quoted ? { quoted } : {});
+  }
+}
+
 async function sendCopyCard(sock, chat, { text, copyText, footer, quoted } = {}) {
   try {
     return await sock.sendMessage(chat, {
@@ -110,4 +129,4 @@ async function sendCopyCard(sock, chat, { text, copyText, footer, quoted } = {})
   }
 }
 
-module.exports = { xadon, xadonCard, sendHtmlPrimitive, sendRichCard, sendOpenLink, sendCopyCard, MARKS, pickMark };
+module.exports = { xadon, xadonCard, sendHtmlPrimitive, sendRichCard, sendOpenLink, sendCopyCard, sendCopyLabel, codeblock, MARKS, pickMark };
