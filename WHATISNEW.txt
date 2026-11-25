@@ -1,0 +1,84 @@
+XADON AI — Update pack (2026-11-25)
+====================================
+1) .vv FIXED ("media key not found")
+   - New shared engine src/lib/viewonce.js: tries full raw from rawstore first,
+     unwraps viewOnceMessageV2/ephemeral wrappers, retries with reupload.
+   - .vv, .vvdl, .vvp all use it. Tip: reply .vv BEFORE opening the view-once;
+     expired/already-opened media cannot be recovered.
+
+2) NEW .autostatuslike (owner)
+   - .autostatuslike on | off  (toggle, likes with ❤️ by default)
+   - .autostatuslike 💚        (sets emoji + turns ON)
+   - Aliases: statuslike, autolike, likestatus
+   - Wired in src/connection.js: every incoming status@broadcast is viewed,
+     and when armed it is liked with your emoji.
+
+3) .play FIXED (multi-API fallback chain)
+   - yt-search for lookup, then tries 6 audio endpoints in order
+     (hector worker, davidcyril x2, ryzen, dreaded, widipe) + cobalt fallback.
+   - Accepts song name OR direct YouTube link. Buffers bytes if URL send fails.
+
+4) .hidetag refreshed + NEW .hidetagall
+   - .hidetag [text] (reply to media keeps media): silent tag in current group.
+   - .hidetagall (reply to text/media) [caption] — OWNER ONLY:
+     forwards that message to EVERY group with silent per-group mentions,
+     5s gap between groups to prevent spam/bans.
+     Aliases: htagall, silenttagall, broadcasttag.
+
+5) .gstatusall NOW SUPPORTS MEDIA
+   - Reply to image/video/audio (+ optional caption, --bg=color supported)
+     with .gstatusall to broadcast it as group-status to all groups.
+   - Plain-text mode unchanged.
+
+6) NEW .jidtag (CODY-style group-JID tag)
+   - .jidtag how are you  → sends "@how are you" with the GROUP JID as the
+     mention, rendering one @pill with your custom text.
+   - Aliases: gjidtag, groupjidtag, tagjid. Group + admin only.
+
+Files added: src/lib/viewonce.js, src/commands/owner/autostatuslike.js,
+  src/commands/group/hidetagall.js, src/commands/group/jidtag.js
+Files edited: src/commands/tools/vv.js, vvdl.js, vvp.js,
+  src/commands/downloader/play.js, src/commands/group/hidetag.js,
+  src/commands/group/gstatusall.js, src/connection.js
+
+--- UPDATE 2026-11-25 (part 2) ---
+7) .setformat canvas styles — NEW
+   - .setformat canvas normal  → glossy colour-gradient image card (upgraded:
+     starfield + scanlines + glow frame).
+   - .setformat canvas hacker  → NEW green-on-black MATRIX terminal card:
+     binary-rain background, terminal window with traffic-light buttons,
+     "$> your reply" typed lines with cursor block, decrypt/access-granted
+     header lines, progress blocks + ENCRYPTED footer.
+   - .setformat list now shows the active canvas style.
+   - .fmtpreview now demos both canvas styles.
+   - Style is saved (canvasStyle) and used by every reply while format=canvas.
+
+8) .update — REBUILT as full panel wipe + fresh clone + restart
+   - .update now  →  1) snapshots .env/session/database,
+     2) fetches a FRESH repo copy to temp (git clone --depth 1, tarball fallback),
+     3) verifies it (package.json + index.js + src/ must exist, else ABORT),
+     4) deletes EVERYTHING in panel root EXCEPT
+        .env · session/ · sessions/ · database/ · node_modules/,
+     5) copies ALL fresh files in (incl. .git on git hosts),
+     6) restores/protected-check, npm install, then restarts the panel.
+   - .update (check mode) unchanged and still changes nothing.
+
+--- UPDATE 2026-11-25 (part 3) ---
+9) NEW .setformat animated — canvas loading ANIMATION format
+   - Turn on: .setformat animated
+   - Every command reply now: sends a canvas image with a 4-stage editing
+     animation (progress bar captions, ~650ms apart), then the REAL bot
+     response lands as the caption of that same image (edited in place).
+   - Follows your canvas style: hacker → matrix terminal frames,
+     normal → colour gradient frames. Overlong replies (>1000 chars, the
+     image-caption limit) auto-send the remainder as a follow-up message.
+   - Total formats now: 25.
+
+10) NEW .quotely (alias .qc) — MISSING-command #1
+    - Reply to any message (or .quotely <text>) → offline quote-card sticker:
+      dark WhatsApp-style card, coloured name + avatar initial, wrapped text,
+      time + blue ticks, XADON watermark. No API, no key, always works.
+
+11) NEW .tourl (aliases tourlink, uploadurl, catbox) — MISSING-command #2
+    - Reply to image/video/audio/document/sticker with .tourl → uploads to
+      catbox.moe and returns a tap-to-copy link card (+ file size/type).
