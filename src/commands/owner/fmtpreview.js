@@ -8,6 +8,10 @@ module.exports = {
       try { await fmt.sendFormatted(sock, m.chat, `[${f}] ${sample}`, { quoted: m.raw, format: f }); } catch {}
       await new Promise((r) => setTimeout(r, 600));
     }
+    for (const st of ['normal', 'hacker']) {
+      try { await fmt.sendFormatted(sock, m.chat, `[canvas ${st}] ${sample}`, { quoted: m.raw, format: 'canvas', canvasStyle: st }); } catch {}
+      await new Promise((r) => setTimeout(r, 600));
+    }
     return reply(ui.notice('success', 'Preview done', `Current saved format is still: ${fmt.getFormat()}\nSwitch: .setformat <name>`));
   },
 };
