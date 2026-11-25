@@ -12,7 +12,7 @@ module.exports = {
     try {
       const out = mode === 'encode' ? Buffer.from(input).toString('base64') : Buffer.from(input.replace(/\s/g, ''), 'base64').toString('utf8');
       if (!out) throw new Error('empty');
-      await reply(ui.card({ icon: '≡', title: `Base64 ${mode}`, subtitle: 'converter', rows: [], body: `${fonts.mono(out.slice(0, 1200))}\n\n${ui.footer()}` }));
+      await reply(ui.card({ icon: '≡', title: `Base64 ${mode}`, subtitle: 'converter', rows: [], body: '```text\n' + out.slice(0, 1200) + '\n```\n\n' + ui.footer() }));
     } catch { await reply(ui.notice('error', 'Failed', mode === 'decode' ? 'That is not valid base64.' : 'Could not encode.')); }
   },
 };
