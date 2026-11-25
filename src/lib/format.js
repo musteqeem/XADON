@@ -25,7 +25,7 @@ const path = require('path');
 const crypto = require('crypto');
 const db = require('./database');
 
-const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro', 'neon', 'glass', 'minimal', 'gold', 'ocean', 'royal', 'candy', 'ghost', 'veil', 'pulse'];
+const FORMATS = ['default', 'mono', 'media', 'rich', 'color', 'html', 'a2ui', 'ads', 'raw', 'clean', 'elder', 'retro', 'neon', 'glass', 'minimal', 'gold', 'ocean', 'royal', 'candy', 'ghost', 'veil', 'pulse', 'xadon', 'canvas', 'animated'];
 // V10 - 10 NEW premium formats (XADON premium sources: prexzy rich cards, richRelay grids, htmlGame webviews, poolcard/router, translation service, albumpic carousels, hiddenmsg cards, metamsg tables, sendlocation pins): neon glass minimal gold ocean royal candy ghost veil pulse.
 const PIC_FILE = path.resolve(__dirname, '../../assets/reply-pic.jpg');
 
@@ -42,6 +42,19 @@ const setFormat = (name) => {
   if (!FORMATS.includes(f)) return null;
   db.set('replyFormat', f);
   return f;
+};
+
+// ---- canvas image styles: normal (colour gradient) | hacker (matrix terminal) ----
+const CANVAS_STYLES = ['normal', 'hacker'];
+const getCanvasStyle = () => {
+  const s = String(db.get('canvasStyle', 'normal') || 'normal').toLowerCase();
+  return CANVAS_STYLES.includes(s) ? s : 'normal';
+};
+const setCanvasStyle = (name) => {
+  const s = String(name || '').toLowerCase();
+  if (!CANVAS_STYLES.includes(s)) return null;
+  db.set('canvasStyle', s);
+  return s;
 };
 
 // ---- custom per-command reply text ----
@@ -211,7 +224,7 @@ async function sendAds(sock, chat, text, { quoted, mentions } = {}) {
  * extra is merged (mentions etc.). quoted defaults to the trigger message.
  */
 async function sendFormatted(sock, chat, text, opts = {}) {
-  const { quoted, format, ...extra } = opts;
+  const { quoted, format, canvasStyle, ...extra } = opts;
   const fmt = format || getFormat();
   const body = brand(String(text ?? ''));
   if (fmt === 'mono') {
@@ -280,11 +293,131 @@ async function sendFormatted(sock, chat, text, opts = {}) {
   if (fmt === 'ghost') { const s = `${String(text ?? '').replace(/[*_`~]/g, '')}\n\u00B7 \u00B7 \u00B7 ${bn10}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
   if (fmt === 'veil') { const s = `\u262C ${String(text ?? '')} \u262C`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
   if (fmt === 'pulse') { const s = `\u25C9 \u2500\u2500\u2500 ${bn10} \u2500\u2500\u2500 \u25C9\n${String(text ?? '')}`; return sock.sendMessage(chat, { text: s.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined); }
+  if (fmt === 'xadon') {
+    const x = `\u2726 \u2500\u2500\u2500\u2500\u2500 \u22C6\u22C5\u22C6\u22C5 \u2500\u2500\u2500\u2500\u2500 \u2726\n   *${bn10.toUpperCase()}*\n\u2726 \u2500\u2500\u2500\u2500\u2500 \u22C6\u22C5\u22C6\u22C5 \u2500\u2500\u2500\u2500\u2500 \u2726\n\n${String(text ?? '')}\n\n> ${bn10}`;
+    return sock.sendMessage(chat, { text: x.slice(0, 4000), ...extra }, quoted ? { quoted } : undefined);
+  }
+  if (fmt === 'canvas') {
+    try {
+      const style = String(canvasStyle || getCanvasStyle()).toLowerCase();
+      const img = style === 'hacker'
+        ? await canvasHackerCard(String(text ?? '').slice(0, 400), liveName())
+        : await canvasCard(String(text ?? '').slice(0, 400), liveName());
+      return await sock.sendMessage(chat, { image: img }, quoted ? { quoted } : undefined);
+    } catch { return sock.sendMessage(chat, { text: String(text ?? ''), ...extra }, quoted ? { quoted } : undefined); }
+  }
+  if (fmt === 'animated') {
+    try { return await sendAnimated(sock, chat, body, { quoted, mentions: extra.mentions }); }
+    catch { return sock.sendMessage(chat, { text: body, ...extra }, quoted ? { quoted } : undefined); }
+  }
   return sock.sendMessage(chat, { text: body, ...extra }, quoted ? { quoted } : undefined);
+}
+
+function wrapLines(text, maxLen = 34, maxLines = 7) {
+  const words = String(text).replace(/[*_`~]/g, '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if ((cur + ' ' + w).trim().length > maxLen) { lines.push(cur.trim()); cur = w; if (lines.length >= maxLines) break; }
+    else cur = (cur + ' ' + w).trim();
+  }
+  if (cur && lines.length < maxLines) lines.push(cur.trim());
+  return lines.slice(0, maxLines);
+}
+
+/** Canvas NORMAL — glossy colour gradient card with starfield + scanline animation feel. */
+async function canvasCard(text, botName) {
+  const sharp = require('sharp');
+  const esc = (s = '') => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const shown = wrapLines(text).map(esc);
+  let stars = '';
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 60; i++) stars += `<circle cx="${(rnd() * 900).toFixed(0)}" cy="${(rnd() * 540).toFixed(0)}" r="${(1 + rnd() * 2).toFixed(1)}" fill="#ffffff" opacity="${(0.3 + rnd() * 0.7).toFixed(2)}"/>`;
+  let scan = '';
+  for (let y = 8; y < 540; y += 12) scan += `<rect x="0" y="${y}" width="900" height="2" fill="#000000" opacity="0.12"/>`;
+  const body = shown.map((l, i) => `<text x="450" y="${250 + i * 36}" font-family="Arial,sans-serif" font-size="27" fill="#ffff00" text-anchor="middle">${l}</text>`).join('');
+  const svg = `<svg width="900" height="540" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff69b4"/><stop offset="0.5" stop-color="#33cc33"/><stop offset="1" stop-color="#6666cc"/></linearGradient><linearGradient id="frame" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.2"/></linearGradient></defs><rect width="900" height="540" fill="url(#g)"/>${stars}${scan}<rect x="10" y="10" width="880" height="520" rx="22" fill="none" stroke="url(#frame)" stroke-width="5"/><text x="450" y="90" font-family="Arial,sans-serif" font-size="64" font-weight="bold" fill="#ffffff" text-anchor="middle">${esc(botName).toUpperCase().slice(0, 24)}</text><text x="450" y="140" font-family="Arial,sans-serif" font-size="26" fill="#ffffff" text-anchor="middle">\u2726 \u22C6\u22C5\u22C6\u22C5 PREMIUM \u22C6\u22C5\u22C6\u22C5 \u2726</text>${body}<text x="450" y="505" font-family="Arial,sans-serif" font-size="20" fill="#ffffff" opacity="0.85" text-anchor="middle">\u25CF \u25CF \u25CF</text></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** Canvas HACKER — green-on-black matrix terminal card with binary rain + shell frame. */
+async function canvasHackerCard(text, botName) {
+  const sharp = require('sharp');
+  const esc = (s = '') => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const shown = wrapLines(text, 36, 6).map(esc);
+  let seed = 1337;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // binary rain columns
+  let rain = '';
+  for (let c = 0; c < 24; c++) {
+    const x = 20 + c * 36;
+    let bits = '';
+    for (let r = 0; r < 8; r++) bits += rnd() > 0.5 ? '1' : '0';
+    rain += `<text x="${x}" y="${60 + (c % 5) * 90}" font-family="monospace" font-size="17" fill="#00ff41" opacity="${(0.15 + rnd() * 0.35).toFixed(2)}" text-anchor="middle">${bits}</text>`;
+  }
+  let scan = '';
+  for (let y = 0; y < 540; y += 6) scan += `<rect x="0" y="${y}" width="900" height="1" fill="#000000" opacity="0.35"/>`;
+  const body = shown.map((l, i) => `<text x="70" y="${235 + i * 34}" font-family="monospace" font-size="24" fill="#00ff41">$> ${l}<rect x="${72 + l.length * 14.5}" y="${218 + i * 34}" width="13" height="22" fill="#00ff41" opacity="${i === shown.length - 1 ? 0.9 : 0}"/></text>`).join('');
+  const filled = Math.min(10, 3 + shown.join('').length % 8);
+  let blocks = '';
+  for (let i = 0; i < 10; i++) blocks += `<rect x="${70 + i * 62}" y="440" width="52" height="16" rx="3" fill="${i < filled ? '#00ff41' : 'none'}" stroke="#00ff41" stroke-width="2"/>`;
+  const svg = `<svg width="900" height="540" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="bg" cx="0.5" cy="0.4" r="0.9"><stop offset="0" stop-color="#062b06"/><stop offset="1" stop-color="#010801"/></radialGradient><linearGradient id="hframe" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00ff41"/><stop offset="1" stop-color="#008f11"/></linearGradient></defs><rect width="900" height="540" fill="url(#bg)"/>${rain}${scan}<rect x="14" y="14" width="872" height="512" rx="18" fill="none" stroke="url(#hframe)" stroke-width="4"/><!-- terminal header --><rect x="34" y="34" width="832" height="52" rx="12" fill="#031503" stroke="#00ff41" stroke-width="2"/><circle cx="66" cy="60" r="9" fill="#ff5f56"/><circle cx="94" cy="60" r="9" fill="#ffbd2e"/><circle cx="122" cy="60" r="9" fill="#27c93f"/><text x="450" y="69" font-family="monospace" font-size="24" font-weight="bold" fill="#00ff41" text-anchor="middle">XADON // SECURE_SHELL — ${esc(botName).toUpperCase().slice(0, 16)}</text><text x="70" y="135" font-family="monospace" font-size="20" fill="#ffbd2e">[root@xadon]$ decrypting_reply --trace ... OK</text><text x="70" y="168" font-family="monospace" font-size="20" fill="#7df9ff">[access_granted] channel_secured :: AES-256</text><line x1="50" y1="190" x2="850" y2="190" stroke="#00ff41" stroke-width="1" opacity="0.5"/>${body}${blocks}<text x="70" y="492" font-family="monospace" font-size="19" fill="#00ff41" opacity="0.8">status: ENCRYPTED \u25CF ${esc(botName).slice(0, 20)} \u25CF trace_off</text></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** ANIMATED format — canvas image plays an editing animation, then the reply lands as its caption. */
+async function sendAnimated(sock, chat, text, { quoted, mentions } = {}) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const bn = liveName();
+  const full = brand(String(text ?? ''));
+  const hacker = String(getCanvasStyle()).toLowerCase() === 'hacker';
+  let img;
+  try {
+    img = hacker ? await canvasHackerCard(`${bn} loading`, bn) : await canvasCard(`${bn} loading`, bn);
+  } catch {
+    return sock.sendMessage(chat, { text: full, mentions }, quoted ? { quoted } : undefined);
+  }
+  const frames = hacker ? [
+    `[root@xadon]$ ./render --style hacker\n[\u2593\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 10% \u00B7 injecting pixels`,
+    `[root@xadon]$ ./render --style hacker\n[\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591\u2591] 40% \u00B7 bypassing filters`,
+    `[root@xadon]$ ./render --style hacker\n[\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591] 70% \u00B7 encrypting frame`,
+    `[root@xadon]$ ./render --style hacker\n[\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593] 100% \u00B7 access granted`,
+  ] : [
+    `\u2726 ${bn}\n\u25D0 warming up the canvas\u2026\n\u2593\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591 10%`,
+    `\u2726 ${bn}\n\u25D1 painting pixels\u2026\n\u2593\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591\u2591 40%`,
+    `\u2726 ${bn}\n\u25D2 adding glow\u2026\n\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591 70%`,
+    `\u2726 ${bn}\n\u25D3 final polish\u2026\n\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593 100%`,
+  ];
+  let sent;
+  try {
+    sent = await sock.sendMessage(chat, { image: img, caption: frames[0], mentions }, quoted ? { quoted } : undefined);
+  } catch {
+    return sock.sendMessage(chat, { text: full, mentions }, quoted ? { quoted } : undefined);
+  }
+  for (const fr of frames.slice(1)) {
+    await wait(650);
+    try { await sock.sendMessage(chat, { image: img, caption: fr, mentions, edit: sent.key }); }
+    catch { break; }
+  }
+  await wait(650);
+  const cap = full.slice(0, 1000);
+  const rest = full.slice(1000);
+  try {
+    await sock.sendMessage(chat, { image: img, caption: cap, mentions, edit: sent.key });
+  } catch {
+    try { sent = await sock.sendMessage(chat, { image: img, caption: cap, mentions }, quoted ? { quoted } : undefined); }
+    catch { return sock.sendMessage(chat, { text: full, mentions }, quoted ? { quoted } : undefined); }
+  }
+  if (rest) {
+    try { await sock.sendMessage(chat, { text: rest.slice(0, 4000), mentions }, quoted ? { quoted } : undefined); } catch {}
+  }
+  return sent;
 }
 
 module.exports = {
   FORMATS, getFormat, setFormat, getCustom, setCustom, delCustom, listCustom,
   fillVars, getReplyPic, setReplyPicUrl, saveReplyPicFile, clearReplyPic,
   brand, liveName, sendFormatted, sendColor, sendHtml, sendA2ui, sendAds, MONO_WRAP,
+  CANVAS_STYLES, getCanvasStyle, setCanvasStyle, canvasCard, canvasHackerCard, sendAnimated,
 };
