@@ -49,6 +49,7 @@ async function run(name, ctx) {
       const num = (args[1] || '').replace(/\D/g, '') || m.number || '';
       const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${nm}\nTEL;TYPE=CELL:${num}\nEND:VCARD`;
       await sock.sendMessage(m.chat, { document: Buffer.from(vcard), mimetype: 'text/vcard', fileName: `${nm}.vcf` }, { quoted: m.raw }).catch(() => {});
+      try { await require('./rich').sendCopyLabel(sock, m.chat, { title: 'Copy contact number', value: num || 'no number', quoted: m.raw }); } catch {}
       return;
     }
     case 'table': {
@@ -58,7 +59,7 @@ async function run(name, ctx) {
       const w = [];
       rows.forEach((r) => r.forEach((c, i) => { w[i] = Math.max(w[i] || 0, c.length); }));
       const out = rows.map((r) => r.map((c, i) => c.padEnd(w[i])).join(' │ ')).join('\n');
-      return reply(fonts.mono(out.slice(0, 1500)));
+      return reply('```text\n' + out.slice(0, 1500) + '\n```');
     }
     case 'space': {
       try {
@@ -82,7 +83,7 @@ async function run(name, ctx) {
     case 'codesearch': {
       const q = (text || '').trim();
       if (!q) return reply(ui.notice('info', 'Code search', `Usage: ${fonts.mono(`${prefix}codesearch express static`)}`));
-      return reply(`Search GitHub code:\nhttps://github.com/search?q=${encodeURIComponent(q)}&type=code`);
+      return reply('```text\nhttps://github.com/search?q=' + encodeURIComponent(q) + '&type=code\n```');
     }
     default:
       return reply(ui.notice('error', 'Unknown', `No handler for ${name}.`));
