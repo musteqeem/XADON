@@ -11,6 +11,7 @@ module.exports = {
     const url = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(input.slice(0, 100))}&code=Code128&translate-eb=hide&dpi=150`;
     try {
       await sock.sendMessage(m.chat, { image: { url }, caption: `◈ 𝗕𝗔𝗥𝗖𝗢𝗗𝗘 ⟶ ${input.slice(0, 100)}\n\n${ui.footer()}` }, { quoted: m.raw });
+      try { await require('../../lib/rich').sendCopyLabel(sock, m.chat, { title: 'Copy barcode text', value: input.slice(0, 200), quoted: m.raw }); } catch {}
     } catch {
       return reply(ui.notice('error', 'Barcode failed', 'The barcode service did not respond. Try again.'));
     }
