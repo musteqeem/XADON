@@ -13,6 +13,7 @@ module.exports = {
       const short = (await res.text()).trim();
       if (!short.startsWith('http')) throw new Error(short.slice(0, 80));
       await reply(ui.card({ icon: '✂', title: 'Link shortened', subtitle: 'is.gd', rows: [['short', fonts.bold(short)], ['long', fonts.mono(url.slice(0, 120))]], body: ui.footer() }));
+      try { await require('../../lib/rich').sendCopyLabel(sock, m.chat, { title: 'Copy short link', value: short, quoted: m.raw }); } catch {}
     } catch (e) { await reply(ui.notice('error', 'Shorten failed', 'That URL was rejected.')); }
   },
 };
