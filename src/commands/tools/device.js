@@ -43,6 +43,7 @@ module.exports = {
         const label = DEVICE_LABELS[device] || DEVICE_LABELS.unknown;
         const who = quotedId ? `@${String(targetSender).split('@')[0]}` : 'You';
 
+        try { await require('../../lib/rich').sendCopyLabel(sock, m.chat, { title: 'Copy device', value: label, quoted: m }); } catch {}
         return sock.sendMessage(m.chat, {
             text: `${who} sent that message from: *${label}*`,
             mentions: quotedId && String(targetSender).includes('@') ? [targetSender] : [],
