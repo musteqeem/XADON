@@ -129,3 +129,62 @@ same clean style as `.ping` — while native commands keep the active format.
   - the dev may use ֎ exactly like the normal prefix (`.ping` → `֎ping`),
     parsed to the same command, so `֎ping` always answers even when the bot
     is private.
+
+## 12. Rebrand sweep (src/lib) + dead-plugin removal
+
+- Every `crysnova`/`crysnovax` → XADON/xadon and every `cody`/`Cody`/`CODY` → XADON/Xadon/xadon
+  across `src/lib` (comments, strings, env names `CODY_*` → `XADON_*`, relay symbol key,
+  `content.crysnovax` flag → `content.xadon`, rival repo/CDN strings, wa snippet branding
+  `New Cody` → `XADON AI`, `ABZTECH` → `XADON`). Zero hits remain.
+  `prexzy` kept as-is (live API provider name + endpoint used by felo/hostcheck/movieintel).
+  `sendPlogmeMessage`/`plogme` identifiers left untouched (third-party Baileys API names).
+- `src/lib/cody/` → `src/lib/xadonfx/`, `src/lib/codyBridge.js` → `src/lib/xadonBridge.js`
+  (all 4 referencing files updated); bridge fixed to load from the new dir
+  (it previously resolved the wrong path and loaded 0 files — now 14/14).
+- REMOVED (broken unloadable / dangerous / harmful — each verified via require-test):
+  mute-core (missing node-cron), statusHandler (missing chalk/plogme; XADON handles
+  status in connection.js), updater (missing adm-zip + pointed at rival repo `crysnovax/CODY`),
+  autoApprove (broken sibling require; XADON has autoadd), accessListManager, adminwatch,
+  antiMessageModeration, bulkModeration, mediaAnti, promotionGuard, socialVideoCommand
+  (all broken sibling requires), dramaboxPersonalProcessor (missing ffmpeg-static/canvas),
+  editDecrypt (missing plogme), socialDl (missing file-type), configManager (only served
+  removed plugins), crysStatistic (dead panel route for another bot), wa_hack.js (dark-web
+  dump, not a module). Remaining 14 plugins + prexzy/identityUtils/translationService/
+  richRelay/htmlGame all load cleanly. wa_* files are unevaluated reference snippets.
+- Also fixed: `src/lib/rich.js` was missing its `MARKS` declaration (broke chess) — restored.
+
+## 13. Integration.txt batch (functions picked, not copied)
+
+- **screenrecord** (`tools/screenrecord.js`, alias wssr/screenrec/recordsite): only the
+  helper functions ported (normalizeUrl/extractUrls/recordingViewport/downloadRecording),
+  command rewritten in XADON `run` format with snapshot API.
+- **jid** (`tools/jid.js`, alias getjid/chatid): resolves chat/invite/number; uses the
+  tap-to-copy label function natively.
+- **Copy-label function** (`rich.sendCopyLabel`, nativeFlow copy button + codeblock
+  fallback) integrated into 10 commands: jid, jidinfo, passwordgen, uuid, hash,
+  shortlink, tinyurl, vcf, barcode, device.
+- **md** (`tools/md.js`, alias markdown/code/syntax): fully deobfuscated, rebranded
+  XADON, XADON `run` format, prefix-aware usage, `╭─❍ *CODE BLOCK*` card style with
+  ``` fenced fallback. Codeblock formatting integrated into 10 command replies:
+  hash, passwordgen, uuid, json (already fenced), base64, binary, morse,
+  colorinfo, table, codesearch.
+- **sprem → mention**: `src/lib/stickerExif.js` (withExif via node-webpmux);
+  `.mention sprem` (reply to image/video/sticker) builds a 512 webp via sharp
+  (ffmpeg for video when available), brands it and saves it; whenever the owner
+  is tagged the bot replies with that sticker in premium look.
+- **gitfile** (`tools/gitfile.js`, alias repozip/ziprepo/gitclone): rewritten to XADON
+  `run` format (original `command/aliases/description` shape would not load);
+  tries main then master branch.
+- **mutetimer** (`group/mutetimer.js`, 10s–12h, auto-unmute; timer resets on restart).
+- **`.setformat xadon`**: new format #23 using the requested UI frame
+  (✦ ───── ⋆⋅☆⋅⋆ ───── ✦ + title + body + `> bot`).
+- **`.setformat canvas`**: new format #24 — every reply rendered as an animated-look
+  gradient+stars canvas card **image only, no text** (sharp SVG render, zero new deps;
+  text fallback if render fails).
+- **New `security` category — 10 ethical/defensive commands**: whois, sslcheck,
+  httpheaders, urlunshorten, hashid, portcheck (common ports only, own-hosts note),
+  robotscheck, techdetect, phishcheck, pwncheck (HIBT k-anonymity, DM-only).
+  No new deps — axios/whois-json/cheerio/sharp/node-webpmux already in package.json.
+- Bugs fixed this pass: barcode nested-try syntax error; rich.js MARKS export
+  (broke chess); xadonBridge wrong-dir (loaded 0 files, now 14/14); 6 upstream
+  backtick typos (previous pass).
