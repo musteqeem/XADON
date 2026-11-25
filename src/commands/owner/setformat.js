@@ -1,4 +1,4 @@
-// XADON V10 · setformat — 22 reply formats: 12 classic + 10 NEW premium (neon glass minimal gold ocean royal candy ghost veil pulse)
+// XADON V13 · setformat — 25 reply formats + canvas styles (normal | hacker) + animated.
 const fmt = require('../../lib/format');
 const DESC = {
   default: 'classic premium card/unicode style',
@@ -22,17 +22,35 @@ const DESC = {
   candy: 'soft candy frame',
   ghost: 'faint ghost signature',
   veil: 'veiled divider card',
+  xadon: 'XADON group-closed frame UI',
+  canvas: 'animated canvas image card — styles: normal | hacker',
+  animated: 'ANIMATION — canvas image plays a loading edit-animation, then the reply lands as its caption',
   pulse: 'pulse header card',
 };
 module.exports = {
-  name: 'setformat', alias: ['format', 'replyformat'], desc: 'Switch bot reply format (22 formats)', usage: '.setformat raw | .setformat list', category: 'owner', owner: true,
+  name: 'setformat', alias: ['format', 'replyformat'], desc: 'Switch bot reply format (25 formats + canvas styles)', usage: '.setformat animated | .setformat canvas hacker | .setformat list', category: 'owner', owner: true,
   async run({ text, reply, ui }) {
     const t = (text || '').trim().toLowerCase();
     if (!t || t === 'list') {
-      return reply(ui.card({ icon: '◈', title: 'Reply formats (22)', subtitle: `current: ${fmt.getFormat()}`, rows: fmt.FORMATS.map((f) => [f, `${f === fmt.getFormat() ? '● active' : '○'} — ${DESC[f] || ''}`]), body: 'Usage: .setformat raw\nRaw/clean/elder/retro = no play, just text.\nMedia/Ads thumbnail: .setreplypic <url | reply image>' }));
+      const cur = fmt.getFormat();
+      const rows = fmt.FORMATS.map((f) => {
+        let d = `${f === cur ? '● active' : '○'} — ${DESC[f] || ''}`;
+        if (f === 'canvas') d += ` (current style: ${fmt.getCanvasStyle()})`;
+        return [f, d];
+      });
+      return reply(ui.card({ icon: '◈', title: `Reply formats (${fmt.FORMATS.length})`, subtitle: `current: ${cur}${cur === 'canvas' ? ' · ' + fmt.getCanvasStyle() : ''}`, rows, body: 'Usage: .setformat raw\n.setformat animated  (canvas loading animation, reply as caption)\n.setformat canvas normal  (colour gradient card)\n.setformat canvas hacker  (matrix terminal card)\nMedia/Ads thumbnail: .setreplypic <url | reply image>' }));
     }
-    const f = fmt.setFormat(t);
-    if (!f) return reply(ui.notice('error', 'Unknown format', 'Pick: default, mono, media, rich, color, html, a2ui, ads, raw, clean, elder, retro'));
-    return reply(ui.notice('success', 'Reply format updated', `Every bot reply now uses ${f} format (${DESC[f]}).\n${f === 'media' || f === 'ads' ? 'Set the picture with .setreplypic' : 'No restart needed.'}`));
+    const parts = t.split(/\s+/);
+    // canvas style picker: ".setformat canvas hacker" / ".setformat canvas normal"
+    if (parts[0] === 'canvas' && parts[1]) {
+      const st = fmt.setCanvasStyle(parts[1]);
+      if (!st) return reply(ui.notice('error', 'Unknown canvas style', 'Pick: ' + fmt.CANVAS_STYLES.join(', ') + '\nExample: .setformat canvas hacker'));
+      fmt.setFormat('canvas');
+      return reply(ui.notice('success', 'Canvas style updated', `Every bot reply is now a ${st === 'hacker' ? 'green-on-black MATRIX terminal' : 'colour gradient'} image card.\nSwitch back: .setformat canvas ${st === 'hacker' ? 'normal' : 'hacker'}`));
+    }
+    const f = fmt.setFormat(parts[0]);
+    if (!f) return reply(ui.notice('error', 'Unknown format', 'Pick: ' + fmt.FORMATS.join(', ') + '\nCanvas styles: .setformat canvas hacker'));
+    const extra = f === 'canvas' ? `\nCanvas style: ${fmt.getCanvasStyle()} (change: .setformat canvas hacker)` : '';
+    return reply(ui.notice('success', 'Reply format updated', `Every bot reply now uses ${f} format (${DESC[f]}).${extra}\n${f === 'media' || f === 'ads' ? 'Set the picture with .setreplypic' : 'No restart needed.'}`));
   },
 };
