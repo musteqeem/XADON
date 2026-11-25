@@ -10,6 +10,6 @@ module.exports = {
     const { fonts } = ui;
     if (!text) return reply(ui.notice('info', 'Morse', `${fonts.mono(`${prefix}morse hello`)}`));
     const out = [...text.toLowerCase()].map((c) => M[c] || '').join(' ').slice(0, 1500);
-    return reply(ui.card({ icon: '⋯', title: 'Morse code', subtitle: 'encoder', rows: [], body: `${fonts.mono(out)}\n\n${ui.footer()}` }));
+    return reply(ui.card({ icon: '⋯', title: 'Morse code', subtitle: 'encoder', rows: [], body: '```text\n' + out + '\n```\n\n' + ui.footer() }));
   },
 };
